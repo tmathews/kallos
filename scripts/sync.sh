@@ -98,10 +98,15 @@ unique_of() {
 sync_one() {
 	local m=$1 mode=$2 rem target head n
 
-	# 0. Materialize. The ONLY `submodule update` in this file.
+	# 0. Materialize. The ONLY `submodule update` in this file — this is the
+	#    path a plain `git clone` (no --recursive) lands on.
 	if [ ! -e "$m/.git" ]; then
-		[ "${DRY:-0}" = 1 ] && { act "$m" "would clone"; return; }
-		git submodule update --init -- "$m" >/dev/null || { err "$m" "clone failed"; return; }
+		if [ "${DRY:-0}" = 1 ]; then
+			act "$m" "would clone"
+			return
+		fi
+		git submodule update --init -- "$m" >/dev/null ||
+			{ err "$m" "clone failed"; return; }
 	fi
 
 	rem=$(remote_of "$m") || { err "$m" "no usable remote — add one named 'origin'"; return; }
@@ -115,10 +120,17 @@ sync_one() {
 	fi
 	head=$(sha "$m")
 
-	# 3. Nothing to do, and already in a shape that's good to work in.
+	# 3. Nothing to do, and already in a shape that's good to work in. Note any
+	#    local changes on the way past: they are not a problem here — nothing
+	#    needs to move — but a bare OK next to a half-finished edit reads as
+	#    "this submodule is untouched", which is the opposite of true.
 	if [ "$head" = "$target" ] && on_main "$m" &&
 	   [ -n "$(git -C "$m" config --get branch.main.remote || true)" ]; then
-		ok "$m" "${dim}${head:0:8}${off}"
+		if is_dirty "$m"; then
+			ok "$m" "${dim}${head:0:8}${off} ${ylw}(local changes, left alone)${off}"
+		else
+			ok "$m" "${dim}${head:0:8}${off}"
+		fi
 		return
 	fi
 
@@ -165,13 +177,21 @@ sync_one() {
 		return
 	fi
 	fix_upstream "$m" "$rem"
-	act "$m" "${dim}${head:0:8} -> ${target:0:8}${off}"
+	# A fresh clone lands here with head == target already: `submodule update`
+	# left it detached at the pin, and the only thing that changed is that it
+	# is now on a branch. Saying "da31c35 -> da31c35" would be noise.
+	if [ "$head" = "$target" ]; then
+		act "$m" "attached to main ${dim}${target:0:8}${off}"
+	else
+		act "$m" "${dim}${head:0:8} -> ${target:0:8}${off}"
+	fi
 }
 
 cmd_sync() {
 	local mode=pin
 	[ "${1-}" = --latest ] && mode=latest
-	echo ">> syncing submodules (${mode}${DRY:+, dry run})"
+	# Not ${DRY:+...}: DRY=0 is set-and-non-empty, so that would always fire.
+	echo ">> syncing submodules ($mode$([ "${DRY:-0}" = 1 ] && echo ", dry run"))"
 	for m in "${mods[@]}"; do sync_one "$m" "$mode"; done
 	if [ "$mode" = latest ] && [ "${DRY:-0}" != 1 ]; then
 		echo ">> pins are now stale by construction; review and record them:"

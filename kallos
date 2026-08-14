@@ -145,7 +145,7 @@ phase_build() {
 
 phase_install() {
 	[ "$do_install" = 1 ] || return 0
-	step "install -> $PREFIX"
+	step "install -> ${DESTDIR:+$DESTDIR (staged) }$PREFIX"
 	# A system prefix needs root; a user prefix (or a DESTDIR stage) does not.
 	# Only the copy runs privileged — never the build above it.
 	if [ -w "$PREFIX" ] || [ -n "${DESTDIR:-}" ]; then
@@ -155,6 +155,7 @@ phase_install() {
 	fi
 }
 
+verify_failed=0
 phase_verify() {
 	[ "$do_verify" = 1 ] || return 0
 	# verify.sh claims the real session bus names, so it refuses to run next to
@@ -165,7 +166,12 @@ phase_verify() {
 		return 0
 	fi
 	step "verify"
-	"$root/scripts/verify.sh" "$CFG"
+	# Deliberately not fatal here. By this point the build and the install have
+	# already succeeded, and aborting would suggest they hadn't. The session
+	# checks are timing-sensitive on a cold cache — a first run on a new machine
+	# can lose the overlay-spawn race — so report it and let the exit status
+	# carry the bad news rather than swallowing the rest of the run.
+	"$root/scripts/verify.sh" "$CFG" || verify_failed=1
 }
 
 cmd_doctor() {
@@ -211,6 +217,12 @@ case "$sub" in
 		phase_verify
 		step "done"
 		echo "   ensure $PREFIX/bin is on PATH, then start a session with ./test.sh"
+		if [ "$verify_failed" = 1 ]; then
+			echo "   NOTE: built and installed, but verify reported failures above."
+			echo "   Re-run scripts/verify.sh $CFG — the session checks can lose a"
+			echo "   race on a cold cache and pass on a second run."
+			exit 1
+		fi
 		;;
 	status)  "$root/scripts/sync.sh" status ;;
 	sync)    phase_sync ;;
