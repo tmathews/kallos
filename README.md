@@ -34,7 +34,7 @@ binaries declare `kallos = { path = "../kallos-lib" }`.
 
 | | |
 |---|---|
-| `kosmos/` | the compositor — the last C in the tree. Binary: `kwm` |
+| `kosmos/` | the compositor — the last C in the tree. Binary: `kosmos` |
 | `kallosd/` | the session daemon and session root |
 | `kallosctl/` | the control CLI |
 | `hajime/` | the overlay |
@@ -96,7 +96,7 @@ independently runnable, and running them directly is the normal way to iterate.
 |---|---|
 | `scripts/deps.sh` | the Arch package list, muon, and the session checklist |
 | `scripts/sync.sh` | the submodule engine behind `sync`/`status`/`pin`/`push` |
-| `scripts/build.sh` | kwm through kosmos's own muon build, then cargo |
+| `scripts/build.sh` | the compositor through kosmos's own muon build, then cargo |
 | `scripts/install.sh` | copies into `$PREFIX`; never builds |
 | `scripts/verify.sh` | 13 checks against a headless session — no sudo, no TTY |
 | `test.sh` | build, install, and run a session on the primary TTY |

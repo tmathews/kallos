@@ -33,8 +33,8 @@ prefix="${PREFIX:-/usr/local}"
 destdir="${DESTDIR:-}"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-kwm_src="${KWM_SRC:-$root/kosmos}"
-kwm_bin="$kwm_src/builds/$cfg/src/kwm"
+kosmos_src="${KWM_SRC:-$root/kosmos}"
+kosmos_bin="$kosmos_src/builds/$cfg/src/kosmos"
 
 # name -> built path. The Rust three come from their own crate target dirs.
 crates=(kallosd kallosctl hajime)
@@ -50,7 +50,7 @@ missing=0
 for c in "${crates[@]}"; do
 	[ -x "$root/$c/target/$cfg/$c" ] || { echo "!! missing $root/$c/target/$cfg/$c" >&2; missing=1; }
 done
-[ -x "$kwm_bin" ] || { echo "!! missing $kwm_bin (the compositor)" >&2; missing=1; }
+[ -x "$kosmos_bin" ] || { echo "!! missing $kosmos_bin (the compositor)" >&2; missing=1; }
 [ "$missing" -eq 0 ] || { echo "!! build first: scripts/build.sh $cfg" >&2; exit 1; }
 
 bindir="$destdir$prefix/bin"
@@ -59,14 +59,14 @@ systemduserdir="$destdir$prefix/share/systemd/user"
 
 echo ">> installing Kallos ($cfg) -> ${destdir:+$destdir:}$prefix"
 
-# Binaries -> bin/. No rpath fixup: kwm static-links its private deps and the
+# Binaries -> bin/. No rpath fixup: kosmos static-links its private deps and the
 # Rust binaries link only system shared libs, all on the default loader path.
-# kallosd resolves `kwm` and `hajime` as SIBLINGS of itself (spawn::sibling),
+# kallosd resolves `kosmos` and `hajime` as SIBLINGS of itself (spawn::sibling),
 # which is why all four land in one directory and `kallosd --wm --overlay`
 # needs no paths.
 install -d "$bindir"
-install -m755 "$kwm_bin" "$bindir/kwm"
-echo "   bin/kwm"
+install -m755 "$kosmos_bin" "$bindir/kosmos"
+echo "   bin/kosmos"
 for c in "${crates[@]}"; do
 	install -m755 "$root/$c/target/$cfg/$c" "$bindir/$c"
 	echo "   bin/$c"

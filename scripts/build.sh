@@ -6,10 +6,10 @@
 #   kallosd    the system daemon and session root   (Rust, replaces kdaemon)
 #   kallosctl  the control CLI                      (Rust, replaces the C one)
 #   hajime     the overlay                          (Rust, replaced apps/kstart)
-#   kwm        the compositor — Kosmos              (C, ./kosmos)
+#   kosmos        the compositor — Kosmos              (C, ./kosmos)
 #
-# kwm is the last C component and now has its own tree here — ./kosmos, the
-# compositor's own name; the binary it produces is still `kwm`. It is built by
+# kosmos is the last C component and now has its own tree here — ./kosmos, the
+# compositor's own name; the binary it produces is still `kosmos`. It is built by
 # delegating to kosmos/scripts/build.sh, which owns the muon setup, the wlroots
 # subproject and the vendored wlroots patches — there is no second copy of that
 # knowledge here. KWM_SRC relocates it.
@@ -44,16 +44,16 @@ crates=(kallosd kallosctl hajime)
 # them here is all it takes; install.sh appends the same three.
 [ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku) || true
 
-# ---- kwm (C, via its own muon build) --------------------------------------
+# ---- kosmos (C, via its own muon build) --------------------------------------
 # Builds the compositor and its eight synthetic test clients.
 KWM_SRC="${KWM_SRC:-$root/kosmos}"
 if [ "${KWM:-1}" = 0 ]; then
-	echo ">> skipping kwm (KWM=0)"
+	echo ">> skipping kosmos (KWM=0)"
 elif [ ! -x "$KWM_SRC/scripts/build.sh" ]; then
 	echo "!! no compositor tree at $KWM_SRC — set KWM_SRC=<path>, or KWM=0 to skip" >&2
 	exit 1
 else
-	echo ">> building kwm ($CFG) in $KWM_SRC"
+	echo ">> building kosmos ($CFG) in $KWM_SRC"
 	"$KWM_SRC/scripts/build.sh" "$BT"
 fi
 
@@ -68,5 +68,5 @@ for c in "${crates[@]}"; do
 done
 
 echo ">> built:"
-[ "${KWM:-1}" = 0 ] || echo "   $KWM_SRC/builds/$CFG/src/kwm"
+[ "${KWM:-1}" = 0 ] || echo "   $KWM_SRC/builds/$CFG/src/kosmos"
 for c in "${crates[@]}"; do echo "   $root/$c/target/$CFG/$c"; done

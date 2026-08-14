@@ -10,7 +10,7 @@
 #     LIST_REPLY coming out byte-identical is a far stronger signal than
 #     eyeballing fields.
 #
-#  2. **A headless compositor.** WLR_BACKENDS=headless gives kwm outputs with
+#  2. **A headless compositor.** WLR_BACKENDS=headless gives kosmos outputs with
 #     no DRM and no seat, so `kallosd --wm --overlay` can bring up a real
 #     session — SESSION register, overlay spawn, startup commands, supervision
 #     — on a machine that is doing something else.
@@ -35,13 +35,13 @@ root="$PWD"
 
 cfg="${1:-debug}"
 V="${VDIR:-/tmp/kallos-verify}"
-kwm_src="${KWM_SRC:-$root/kosmos}"
+kosmos_src="${KWM_SRC:-$root/kosmos}"
 c_src="${C_SRC:-$root/kstart}"   # the C daemon + CLI, the parity oracle
 
 KD_R="$root/kallosd/target/$cfg/kallosd"
 CTL_R="$root/kallosctl/target/$cfg/kallosctl"
 HAJIME="$root/hajime/target/$cfg/hajime"
-KWM="$kwm_src/builds/$cfg/src/kwm"
+KOSMOS="$kosmos_src/builds/$cfg/src/kosmos"
 KD_C="$c_src/builds/$cfg/apps/kdaemon/kdaemon"   # optional: the parity oracle
 CTL_C="$c_src/builds/$cfg/apps/kallosctl/kallosctl"
 
@@ -58,7 +58,7 @@ done
 
 # A live session would fight this script for the D-Bus names and take the
 # overlay pushes onto the user's real desktop.
-if [ "${FORCE:-0}" != 1 ] && pgrep -x kwm >/dev/null; then
+if [ "${FORCE:-0}" != 1 ] && pgrep -x kosmos >/dev/null; then
 	echo "!! a compositor is running — this script claims session-bus names and" >&2
 	echo "!! pushes overlay verbs. Stop the session, or FORCE=1 to override." >&2
 	exit 1
@@ -90,7 +90,7 @@ export HOME="$V/home"
 export PULSE_SERVER="${PULSE_SERVER:-unix:/run/user/$(id -u)/pulse/native}"
 
 cleanup() { pkill -x kallosd 2>/dev/null || true; pkill -x kdaemon 2>/dev/null || true
-            pkill -x kwm 2>/dev/null || true; pkill -x hajime 2>/dev/null || true; }
+            pkill -x kosmos 2>/dev/null || true; pkill -x hajime 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo ">> verifying the $cfg build; scratch dir $V"
@@ -161,13 +161,13 @@ pkill -x kallosd || true; pkill -x kdaemon || true; sleep 1
 
 # ---- 3. the session root (M10) --------------------------------------------
 head_ "session root: kallosd --wm --overlay on a headless compositor"
-if [ ! -x "$KWM" ]; then
-	skp "no kwm built — session test skipped"
+if [ ! -x "$KOSMOS" ]; then
+	skp "no kosmos built — session test skipped"
 else
 	rm -f "$V/startup-marker"
 	log="$V/session.log"
 	XDG_RUNTIME_DIR="$V/rt-r" WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=2 \
-		nohup "$KD_R" --verbose --wm "$KWM" --overlay "$HAJIME" >"$log" 2>&1 &
+		nohup "$KD_R" --verbose --wm "$KOSMOS" --overlay "$HAJIME" >"$log" 2>&1 &
 	# The compositor needs a moment to bring up Vulkan and register.
 	for _ in $(seq 1 30); do grep -q 'session display registered' "$log" && break; sleep 1; done
 
@@ -211,7 +211,7 @@ else
 		|| no "config reload re-ran the startup commands"
 
 	# A primary compositor dying is the session being over.
-	kill -TERM "$(pgrep -x kwm | head -1)" 2>/dev/null || true
+	kill -TERM "$(pgrep -x kosmos | head -1)" 2>/dev/null || true
 	for _ in $(seq 1 10); do pgrep -x kallosd >/dev/null || break; sleep 1; done
 	if ! pgrep -x kallosd >/dev/null && ! pgrep -x hajime >/dev/null; then
 		ok "compositor death ended the session and reaped the overlay"

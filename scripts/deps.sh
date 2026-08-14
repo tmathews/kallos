@@ -41,7 +41,7 @@ esac
 # Toolchain. clang >= 19 for #embed (kcore/version.c); the tree targets 22.
 build=(base-devel clang git pkgconf glslang rust)
 
-# kwm and the wlroots 0.18.2 it builds as a subproject. libseat comes from
+# kosmos and the wlroots 0.18.2 it builds as a subproject. libseat comes from
 # seatd, libudev from systemd-libs, and gbm/EGL/GLESv2 from mesa — those three
 # are pkg-config module names rather than package names, hence the mapping.
 # libdisplay-info and hwdata are wlroots' own hard deps; libliftoff and lcms2
@@ -157,7 +157,7 @@ id -nG | grep -qw seat ||
 	say "not in group 'seat'   -> sudo usermod -aG seat $USER   (re-login)"
 id -nG | grep -qw input || {
 	say "not in group 'input'  -> sudo usermod -aG input $USER   (re-login)"
-	say "                         without it kwm's evdev lid probe returns UNKNOWN"
+	say "                         without it kosmos's evdev lid probe returns UNKNOWN"
 	say "                         and falls back to /proc/acpi — not fatal"
 }
 [ -n "${XDG_RUNTIME_DIR:-}" ] ||

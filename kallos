@@ -16,7 +16,7 @@
 #
 #   scripts/deps.sh     packages + muon                (this repo)
 #   scripts/sync.sh     the submodule engine           (this repo)
-#   scripts/build.sh    kwm via muon, then cargo       (predates this file)
+#   scripts/build.sh    kosmos via muon, then cargo       (predates this file)
 #   scripts/install.sh  copy into $PREFIX              (predates this file)
 #   scripts/verify.sh   13 checks, no sudo, no TTY     (predates this file)
 #
@@ -161,7 +161,7 @@ phase_verify() {
 	# verify.sh claims the real session bus names, so it refuses to run next to
 	# a live session — and being mid-session is the normal case for an update.
 	# Skip rather than fail; it stays available by hand.
-	if pgrep -x kwm >/dev/null 2>&1; then
+	if pgrep -x kosmos >/dev/null 2>&1; then
 		step "verify — skipped (a session is running; run scripts/verify.sh $CFG later)"
 		return 0
 	fi
