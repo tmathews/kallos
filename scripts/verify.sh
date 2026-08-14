@@ -210,6 +210,71 @@ else
 		&& ok "config reload did not re-run the startup commands" \
 		|| no "config reload re-ran the startup commands"
 
+	# ---- the display domain -----------------------------------------------
+	# Reachable here, and only here: `display` verbs go to the compositor this
+	# block owns, not to the user's desktop. Position is client-observable via
+	# xdg-output, so displays-client watches from the outside rather than
+	# asking kosmos what it believes it did.
+	DC="$kosmos_src/builds/$cfg/apps/displays-client/displays-client"
+	if [ ! -x "$DC" ]; then
+		skp "no displays-client built — arrangement checks skipped"
+	else
+		# The compositor's own socket, and the runtime dir it lives under —
+		# without the latter the client cannot find it at all.
+		export WAYLAND_DISPLAY XDG_RUNTIME_DIR
+		WAYLAND_DISPLAY=$(sed -n 's/.*WAYLAND_DISPLAY=\([a-z0-9-]*\).*/\1/p' "$log" | head -1)
+		XDG_RUNTIME_DIR="$V/rt-r"
+		# Where the two headless outputs start, before anything moves them.
+		base=$("$DC" --print 2>/dev/null || true)
+		h1=$(printf '%s\n' "$base" | awk '$1=="HEADLESS-1"{print $2}')
+
+		"$CTL_R" display HEADLESS-2 position 2000 100 >/dev/null
+		if "$DC" --expect "HEADLESS-2=2000,100,1280x720" >/dev/null; then
+			ok "an explicit position lands where asked"
+		else
+			no "position did not apply"
+		fi
+		# The regression that makes this worth testing: placing one output
+		# explicitly re-packs every output still auto-positioned, so without
+		# the pin the neighbour is dragged along by the move.
+		if "$DC" --expect "HEADLESS-1=$h1,1280x720" >/dev/null; then
+			ok "the other output did not drift"
+		else
+			no "moving one output moved the other (the pin-before-move rule)"
+		fi
+
+		"$CTL_R" display HEADLESS-2 transform 90 >/dev/null
+		if "$DC" --expect "HEADLESS-2=2000,100,720x1280" >/dev/null; then
+			ok "a 90 transform swaps the logical size"
+		else
+			no "transform did not swap logical width/height"
+		fi
+		"$CTL_R" display HEADLESS-2 transform normal >/dev/null
+
+		# saved_pos (the disable/enable restore) is a second record of where
+		# everything sits; a move while it is live has to write through, or
+		# stale coordinates resurrect here.
+		"$CTL_R" display HEADLESS-2 disable >/dev/null
+		sleep 1
+		"$CTL_R" display HEADLESS-2 enable >/dev/null
+		if "$DC" --expect "HEADLESS-2=2000,100,1280x720" --expect "HEADLESS-1=$h1,1280x720" >/dev/null; then
+			ok "disable then enable restored both positions"
+		else
+			no "disable/enable lost the arrangement"
+		fi
+
+		# The arrangement was written back to the config on the user's behalf,
+		# without eating the rest of the file.
+		dpy_cfg="$V/home/.config/kallos/displays"
+		if grep -q 'position 2000 100' "$dpy_cfg" 2>/dev/null; then
+			ok "the arrangement persisted itself to the displays config"
+		else
+			no "the arrangement was not written to $dpy_cfg"
+		fi
+		unset WAYLAND_DISPLAY
+		XDG_RUNTIME_DIR="$V/rt-r"
+	fi
+
 	# A primary compositor dying is the session being over.
 	kill -TERM "$(pgrep -x kosmos | head -1)" 2>/dev/null || true
 	for _ in $(seq 1 10); do pgrep -x kallosd >/dev/null || break; sleep 1; done
