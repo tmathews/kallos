@@ -225,11 +225,15 @@ else
 		WAYLAND_DISPLAY=$(sed -n 's/.*WAYLAND_DISPLAY=\([a-z0-9-]*\).*/\1/p' "$log" | head -1)
 		XDG_RUNTIME_DIR="$V/rt-r"
 		# Where the two headless outputs start, before anything moves them.
+		# The layout is kept anchored to the origin (see the normalisation
+		# check below), so these move the output that is NOT at 0,0 — that
+		# way the requested coordinates are also the resulting ones, and the
+		# checks stay about placement rather than about normalisation.
 		base=$("$DC" --print 2>/dev/null || true)
-		h1=$(printf '%s\n' "$base" | awk '$1=="HEADLESS-1"{print $2}')
+		h2=$(printf '%s\n' "$base" | awk '$1=="HEADLESS-2"{print $2}')
 
-		"$CTL_R" display HEADLESS-2 position 2000 100 >/dev/null
-		if "$DC" --expect "HEADLESS-2=2000,100,1280x720" >/dev/null; then
+		"$CTL_R" display HEADLESS-1 position 2000 100 >/dev/null
+		if "$DC" --expect "HEADLESS-1=2000,100,1280x720" >/dev/null; then
 			ok "an explicit position lands where asked"
 		else
 			no "position did not apply"
@@ -237,27 +241,27 @@ else
 		# The regression that makes this worth testing: placing one output
 		# explicitly re-packs every output still auto-positioned, so without
 		# the pin the neighbour is dragged along by the move.
-		if "$DC" --expect "HEADLESS-1=$h1,1280x720" >/dev/null; then
+		if "$DC" --expect "HEADLESS-2=$h2,1280x720" >/dev/null; then
 			ok "the other output did not drift"
 		else
 			no "moving one output moved the other (the pin-before-move rule)"
 		fi
 
-		"$CTL_R" display HEADLESS-2 transform 90 >/dev/null
-		if "$DC" --expect "HEADLESS-2=2000,100,720x1280" >/dev/null; then
+		"$CTL_R" display HEADLESS-1 transform 90 >/dev/null
+		if "$DC" --expect "HEADLESS-1=2000,100,720x1280" >/dev/null; then
 			ok "a 90 transform swaps the logical size"
 		else
 			no "transform did not swap logical width/height"
 		fi
-		"$CTL_R" display HEADLESS-2 transform normal >/dev/null
+		"$CTL_R" display HEADLESS-1 transform normal >/dev/null
 
 		# saved_pos (the disable/enable restore) is a second record of where
 		# everything sits; a move while it is live has to write through, or
 		# stale coordinates resurrect here.
-		"$CTL_R" display HEADLESS-2 disable >/dev/null
+		"$CTL_R" display HEADLESS-1 disable >/dev/null
 		sleep 1
-		"$CTL_R" display HEADLESS-2 enable >/dev/null
-		if "$DC" --expect "HEADLESS-2=2000,100,1280x720" --expect "HEADLESS-1=$h1,1280x720" >/dev/null; then
+		"$CTL_R" display HEADLESS-1 enable >/dev/null
+		if "$DC" --expect "HEADLESS-1=2000,100,1280x720" --expect "HEADLESS-2=$h2,1280x720" >/dev/null; then
 			ok "disable then enable restored both positions"
 		else
 			no "disable/enable lost the arrangement"
@@ -270,6 +274,22 @@ else
 			ok "the arrangement persisted itself to the displays config"
 		else
 			no "the arrangement was not written to $dpy_cfg"
+		fi
+
+		# The arrangement must keep its top-left corner at the layout origin.
+		# X screens start at (0,0) and cannot go negative, so an arrangement
+		# that starts anywhere else hands XWayland a screen with a dead region
+		# in its top-left and leaves X11 apps with unusable pointer input.
+		# Dragging monitors walks the layout off the origin very easily.
+		"$CTL_R" display HEADLESS-1 position 2000 500 >/dev/null
+		"$CTL_R" display HEADLESS-2 position 2000 1220 >/dev/null
+		sleep 1
+		if "$DC" --print | awk '{split($2,p,","); if (p[1]==0 && p[2]==0) found=1}
+		                        END {exit !found}'; then
+			ok "the arrangement stays anchored to the layout origin"
+		else
+			no "the layout drifted off the origin — XWayland input would break"
+			"$DC" --print | sed 's/^/       /'
 		fi
 		unset WAYLAND_DISPLAY
 		XDG_RUNTIME_DIR="$V/rt-r"
