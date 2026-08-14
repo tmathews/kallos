@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# Kallos — one command to set a machine up, and the same command to update it.
+#
+#   git clone --recursive git@github.com:tmathews/kallos.git
+#   cd kallos && ./kallos
+#
+# That is the whole fresh-Arch story: install the system packages, build muon
+# from source, check out every submodule, build the suite, install it. Run it
+# again next week and it updates instead. There is no separate `init` because
+# `up` is idempotent — the only difference between a new machine and an old one
+# is how much of it is already done.
+#
+# This file is a DISPATCHER. It owns argument parsing, the ordering of the
+# phases, and the three guards below; it owns no build knowledge. The real work
+# lives in scripts/, which stays independently runnable:
+#
+#   scripts/deps.sh     packages + muon                (this repo)
+#   scripts/sync.sh     the submodule engine           (this repo)
+#   scripts/build.sh    kwm via muon, then cargo       (predates this file)
+#   scripts/install.sh  copy into $PREFIX              (predates this file)
+#   scripts/verify.sh   13 checks, no sudo, no TTY     (predates this file)
+#
+# Usage: ./kallos [subcommand] [flags]     (default subcommand: up)
+set -euo pipefail
+cd "$(dirname "$0")"
+root="$PWD"
+
+CFG=release
+APPS=0
+DRY=0
+do_deps=1 do_install=1 do_verify=1 do_pull=0 latest=0 do_pin=0
+PREFIX="${PREFIX:-/usr/local}"
+
+usage() {
+	sed -n '2,20p' "$0" | sed 's/^# \?//'
+	cat <<'EOF'
+
+Subcommands
+  up            deps -> sync -> build -> install -> verify        [default]
+  status        where every submodule is: branch, dirty, ahead/behind, pin
+  sync          move the submodules to the recorded pins
+  pin [-m MSG]  record where the submodules are now
+  push          publish every submodule, so the pins are clonable
+  deps          system packages and muon, nothing else
+  doctor        preflight only — reports, writes nothing
+  build|install|verify   pass straight through to scripts/
+
+Flags
+  --latest      sync to each submodule's origin/main instead of the pins
+  --pin         with --latest, record the new pins afterwards
+  --pull        git pull --ff-only the superproject first
+  --apps        also build/install yggdrasil, torrential and renzoku
+  --debug       build the debug config (default: release)
+  --release     build the release config
+  --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo)
+  --no-deps --no-install --no-verify
+  -n, --dry-run report what sync would do; touch nothing
+EOF
+}
+
+# ---- guards ---------------------------------------------------------------
+
+# Running the whole thing under sudo is the classic way to break this tree:
+# cargo would leave root-owned target/ directories behind and the next
+# unprivileged build fails on them. scripts/build.sh's header says the same;
+# this makes it impossible rather than documented.
+[ "${EUID:-$(id -u)}" -ne 0 ] || {
+	echo "!! don't run this under sudo — cargo would leave root-owned target/ dirs" >&2
+	echo "   run it as yourself; the install step asks for sudo on its own." >&2
+	exit 1
+}
+
+# scripts/install.sh looks for each binary at $root/<crate>/target/$cfg/<crate>.
+# A CARGO_TARGET_DIR in the environment moves them somewhere else and the
+# install fails a preflight that reads like a build failure.
+[ -z "${CARGO_TARGET_DIR:-}" ] || {
+	echo "!! CARGO_TARGET_DIR is set ($CARGO_TARGET_DIR)" >&2
+	echo "   scripts/install.sh expects binaries under each crate's own target/." >&2
+	exit 1
+}
+
+# ---- args -----------------------------------------------------------------
+sub=""
+args=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--latest)    latest=1 ;;
+		--pin)       do_pin=1 ;;
+		--pull)      do_pull=1 ;;
+		--apps)      APPS=1 ;;
+		--debug)     CFG=debug ;;
+		--release)   CFG=release ;;
+		--prefix=*)  PREFIX="${1#--prefix=}" ;;
+		--no-deps)   do_deps=0 ;;
+		--no-install) do_install=0 ;;
+		--no-verify) do_verify=0 ;;
+		-n|--dry-run) DRY=1 ;;
+		-h|--help)   usage; exit 0 ;;
+		-m)          args+=(-m "${2-}"); shift ;;   # `pin -m MSG`
+		debug|release) CFG="$1" ;;
+		-*) echo "!! unknown flag: $1 (try --help)" >&2; exit 2 ;;
+		*)  if [ -z "$sub" ]; then sub="$1"; else args+=("$1"); fi ;;
+	esac
+	shift
+done
+sub="${sub:-up}"
+export APPS DRY PREFIX
+
+step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+
+# ---- phases ---------------------------------------------------------------
+
+phase_deps() {
+	[ "$do_deps" = 1 ] || return 0
+	step "dependencies"
+	APPS="$APPS" "$root/scripts/deps.sh" install
+}
+
+phase_sync() {
+	step "submodules"
+	# --pull is a no-op until the superproject has a commit and a remote, which
+	# is the state during the migration and on any tree that was never pushed.
+	if [ "$do_pull" = 1 ] &&
+	   git rev-parse --verify -q HEAD >/dev/null &&
+	   git remote get-url origin >/dev/null 2>&1; then
+		git pull --ff-only
+	fi
+	if [ "$latest" = 1 ]; then
+		"$root/scripts/sync.sh" sync --latest
+		if [ "$do_pin" = 1 ] && [ "$DRY" != 1 ]; then
+			"$root/scripts/sync.sh" pin -m "bump submodules"
+		fi
+	else
+		"$root/scripts/sync.sh" sync
+	fi
+}
+
+phase_build() {
+	step "build ($CFG${APPS:+, with apps})"
+	# The config is passed EXPLICITLY to both halves and always will be:
+	# scripts/build.sh defaults to debug and scripts/install.sh defaults to
+	# release, so the bare pair builds one thing and installs another.
+	APPS="$APPS" "$root/scripts/build.sh" "$CFG"
+}
+
+phase_install() {
+	[ "$do_install" = 1 ] || return 0
+	step "install -> $PREFIX"
+	# A system prefix needs root; a user prefix (or a DESTDIR stage) does not.
+	# Only the copy runs privileged — never the build above it.
+	if [ -w "$PREFIX" ] || [ -n "${DESTDIR:-}" ]; then
+		APPS="$APPS" PREFIX="$PREFIX" "$root/scripts/install.sh" "$CFG"
+	else
+		sudo APPS="$APPS" PREFIX="$PREFIX" "$root/scripts/install.sh" "$CFG"
+	fi
+}
+
+phase_verify() {
+	[ "$do_verify" = 1 ] || return 0
+	# verify.sh claims the real session bus names, so it refuses to run next to
+	# a live session — and being mid-session is the normal case for an update.
+	# Skip rather than fail; it stays available by hand.
+	if pgrep -x kwm >/dev/null 2>&1; then
+		step "verify — skipped (a session is running; run scripts/verify.sh $CFG later)"
+		return 0
+	fi
+	step "verify"
+	"$root/scripts/verify.sh" "$CFG"
+}
+
+cmd_doctor() {
+	step "doctor"
+	local bad=0
+	for t in git cargo rustc clang pkg-config muon; do
+		if command -v "$t" >/dev/null; then
+			printf '  ok   %-10s %s\n' "$t" "$(command -v "$t")"
+		else
+			printf '  MISS %-10s\n' "$t"; bad=1
+		fi
+	done
+	if [ -f .gitmodules ]; then
+		printf '  ok   %-10s %s registered\n' submodules \
+			"$(grep -c '^\[submodule' .gitmodules)"
+	else
+		printf '  MISS %-10s this tree is not a superproject yet\n' submodules
+		bad=1
+	fi
+	# Probe the transport, not a particular repo: the superproject's own remote
+	# may legitimately not exist yet, and `ls-remote` on a missing repo fails
+	# identically to a missing key. `ssh -T git@github.com` exits 1 even on
+	# success, so match the greeting instead of the status — and swallow that
+	# exit inside the pipeline, or `set -o pipefail` reports it as a failure.
+	if { ssh -o BatchMode=yes -o ConnectTimeout=5 -T git@github.com 2>&1 || true; } |
+		grep -q 'successfully authenticated'; then
+		printf '  ok   %-10s ssh authenticates\n' github
+	else
+		printf '  WARN %-10s git@github.com did not authenticate (ssh key? network?)\n' github
+	fi
+	echo
+	"$root/scripts/deps.sh" check
+	return "$bad"
+}
+
+# ---- dispatch -------------------------------------------------------------
+case "$sub" in
+	up)
+		phase_deps
+		phase_sync
+		phase_build
+		phase_install
+		phase_verify
+		step "done"
+		echo "   ensure $PREFIX/bin is on PATH, then start a session with ./test.sh"
+		;;
+	status)  "$root/scripts/sync.sh" status ;;
+	sync)    phase_sync ;;
+	pin)     "$root/scripts/sync.sh" pin "${args[@]+"${args[@]}"}" ;;
+	push)    "$root/scripts/sync.sh" push ;;
+	deps)    "$root/scripts/deps.sh" install ;;
+	doctor)  cmd_doctor ;;
+	build)   phase_build ;;
+	install) phase_install ;;
+	verify)  "$root/scripts/verify.sh" "$CFG" ;;
+	help)    usage ;;
+	*) echo "!! unknown subcommand: $sub (try --help)" >&2; exit 2 ;;
+esac

@@ -1,0 +1,32 @@
+[submodule "kosmos"]
+	path = kosmos
+	url = git@github.com:tmathews/kosmos.git
+	branch = main
+[submodule "kallos-lib"]
+	path = kallos-lib
+	url = git@github.com:tmathews/kallos-lib.git
+	branch = main
+[submodule "kallosd"]
+	path = kallosd
+	url = git@github.com:tmathews/kallosd.git
+	branch = main
+[submodule "kallosctl"]
+	path = kallosctl
+	url = git@github.com:tmathews/kallosctl.git
+	branch = main
+[submodule "hajime"]
+	path = hajime
+	url = git@github.com:tmathews/hajime.git
+	branch = main
+[submodule "yggdrasil"]
+	path = yggdrasil
+	url = git@github.com:tmathews/yggdrasil.git
+	branch = main
+[submodule "torrential"]
+	path = torrential
+	url = git@github.com:tmathews/torrential.git
+	branch = main
+[submodule "renzoku"]
+	path = renzoku
+	url = git@github.com:tmathews/renzoku.git
+	branch = main

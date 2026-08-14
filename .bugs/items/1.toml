@@ -1,0 +1,15 @@
+id = 1
+kind = "todo"
+title = "Lock & Login screen apps"
+description = """
+
+---
+Moved from the kosmos tracker (#21), originally filed by Thomas Mathews on 2026-07-17.
+Closed there as tracked here.
+Filed at the suite level: no repo owns this yet. kwm already implements
+ext-session-lock (src/lock.c) and kallosd owns the session, but the lock and
+login surfaces themselves are unwritten apps."""
+author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
+state = "open"
+created_at = "2026-08-13T03:44:22.715547892Z"
+updated_at = "2026-08-13T03:44:22.715549364Z"

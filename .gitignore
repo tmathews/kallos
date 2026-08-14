@@ -1,0 +1,12 @@
+# Two sibling clones that are deliberately NOT submodules.
+#
+# kstart is frozen C legacy. Its only remaining job is to build the C kdaemon
+# and C kallosctl that scripts/verify.sh diffs the Rust ports against, and its
+# install.sh is the rollback path. Nothing in a session touches it, and
+# verify.sh already skips the parity block when its binaries are absent — so a
+# machine set up from this repo simply doesn't get those checks.
+#
+# kbrowser has no git remote at all yet. It can become a submodule once it is
+# pushed somewhere.
+/kstart/
+/kbrowser/
