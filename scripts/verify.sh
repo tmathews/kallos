@@ -29,6 +29,9 @@
 #   VDIR=<path>   scratch dir (default /tmp/kallos-verify) — must be SHORT, the
 #                 socket path underneath it has to fit in sockaddr_un.sun_path
 #   FORCE=1       run even if something Kallos-shaped is already running
+#
+# The lock checks need phylax-type (`cargo build --features devtools` in
+# phylax/); without it they are skipped, not failed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
@@ -41,6 +44,9 @@ c_src="${C_SRC:-$root/kstart}"   # the C daemon + CLI, the parity oracle
 KD_R="$root/kallosd/target/$cfg/kallosd"
 CTL_R="$root/kallosctl/target/$cfg/kallosctl"
 HAJIME="$root/hajime/target/$cfg/hajime"
+PHYLAX="$root/phylax/target/$cfg/phylax"
+# The key injector, built only with `cargo build --features devtools`.
+PTYPE="$root/phylax/target/$cfg/phylax-type"
 KOSMOS="$kosmos_src/builds/$cfg/src/kosmos"
 KD_C="$c_src/builds/$cfg/apps/kdaemon/kdaemon"   # optional: the parity oracle
 CTL_C="$c_src/builds/$cfg/apps/kallosctl/kallosctl"
@@ -52,7 +58,7 @@ skp()  { printf '  \033[33mSKIP\033[0m %s\n' "$*"; skip=$((skip + 1)); }
 head_() { printf '\n== %s\n' "$*"; }
 
 # ---- preflight ------------------------------------------------------------
-for b in "$KD_R" "$CTL_R" "$HAJIME"; do
+for b in "$KD_R" "$CTL_R" "$HAJIME" "$PHYLAX"; do
 	[ -x "$b" ] || { echo "!! missing $b — run scripts/build.sh $cfg" >&2; exit 1; }
 done
 
@@ -83,6 +89,9 @@ fi
 # The real startup file would spawn the user's input method into this test
 # session; swap in something observable instead.
 printf '/usr/bin/touch %s/startup-marker\n' "$V" > "$V/home/.config/kallos/startup"
+# The locker under test, with its fake authenticator: "ok" unlocks. Appended,
+# so it overrides whatever the seeded settings say.
+printf 'locker = %s --lock --dry\n' "$PHYLAX" >> "$V/home/.config/kallos/settings"
 
 export HOME="$V/home"
 # $XDG_RUNTIME_DIR is redirected, and PulseAudio lives in it — without this the
@@ -90,7 +99,8 @@ export HOME="$V/home"
 export PULSE_SERVER="${PULSE_SERVER:-unix:/run/user/$(id -u)/pulse/native}"
 
 cleanup() { pkill -x kallosd 2>/dev/null || true; pkill -x kdaemon 2>/dev/null || true
-            pkill -x kosmos 2>/dev/null || true; pkill -x hajime 2>/dev/null || true; }
+            pkill -x kosmos 2>/dev/null || true; pkill -x hajime 2>/dev/null || true
+            pkill -x phylax 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo ">> verifying the $cfg build; scratch dir $V"
@@ -293,6 +303,36 @@ else
 		fi
 		unset WAYLAND_DISPLAY
 		XDG_RUNTIME_DIR="$V/rt-r"
+	fi
+
+	# ---- the locker -------------------------------------------------------
+	# `power lock` spawns phylax as the daemon's child; the compositor's
+	# ext-session-lock relay tells the daemon when it is locked. phylax-type
+	# types through virtual-keyboard-v1, so a wrong then a right password is
+	# a script, not a person.
+	if [ ! -x "$PTYPE" ]; then
+		skp "no phylax-type built (cargo build --features devtools) — lock checks skipped"
+	else
+		WAYLAND_DISPLAY=$(sed -n 's/.*WAYLAND_DISPLAY=\([a-z0-9-]*\).*/\1/p' "$log" | head -1)
+		XDG_RUNTIME_DIR="$V/rt-r" "$CTL_R" power lock >/dev/null; sleep 3
+		grep -q 'kallosd\] session locked' "$log" \
+			&& ok "power lock locked the session (compositor relay seen)" \
+			|| no "no session-locked relay after power lock"
+		XDG_RUNTIME_DIR="$V/rt-r" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" "$PTYPE" 'wrong\n' >/dev/null; sleep 2
+		pgrep -x phylax >/dev/null && ! grep -q 'session unlocked' "$log" \
+			&& ok "a wrong password left it locked" \
+			|| no "a wrong password unlocked, or the locker died"
+		XDG_RUNTIME_DIR="$V/rt-r" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" "$PTYPE" 'ok\n' >/dev/null; sleep 2
+		grep -q 'kallosd\] session unlocked' "$log" && ! pgrep -x phylax >/dev/null \
+			&& ok "the right password unlocked and the locker exited" \
+			|| no "the right password did not unlock"
+		# A locker that dies with the lock held is respawned.
+		XDG_RUNTIME_DIR="$V/rt-r" "$CTL_R" power lock >/dev/null; sleep 3
+		kill -SEGV "$(pgrep -x phylax | head -1)" 2>/dev/null; sleep 2
+		pgrep -x phylax >/dev/null && grep -q 'respawning locker' "$log" \
+			&& ok "a crashed locker was respawned with the session still locked" \
+			|| no "locker crash was not recovered"
+		XDG_RUNTIME_DIR="$V/rt-r" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" "$PTYPE" 'ok\n' >/dev/null; sleep 2
 	fi
 
 	# A primary compositor dying is the session being over.

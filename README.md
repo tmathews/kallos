@@ -17,7 +17,13 @@ packaged on Arch), checks out every submodule at its recorded commit, builds
 everything, and installs it to `/usr/local`. Run it again a week later and it
 updates instead — there is no separate init, because `up` is idempotent.
 
-Then start a session from a TTY:
+Then either enable the login screen and reboot:
+
+```sh
+sudo systemctl enable greetd     # phylax greets on tty1 from the next boot
+```
+
+or start a session from a TTY by hand:
 
 ```sh
 ./test.sh
@@ -99,7 +105,7 @@ independently runnable, and running them directly is the normal way to iterate.
 | `scripts/sync.sh` | the submodule engine behind `sync`/`status`/`pin`/`push` |
 | `scripts/build.sh` | the compositor through kosmos's own muon build, then cargo |
 | `scripts/install.sh` | copies into `$PREFIX`; never builds |
-| `scripts/verify.sh` | 13 checks against a headless session — no sudo, no TTY |
+| `scripts/verify.sh` | 21 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
 | `test.sh` | build, install, and run a session on the primary TTY |
 
 The build always runs unprivileged and the install only copies, so cargo never
