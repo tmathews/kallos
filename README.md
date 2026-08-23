@@ -29,7 +29,7 @@ component needs them, are at the top of that file.
 
 ## Layout
 
-The submodules sit flat, as siblings, and must stay that way: all five Rust
+The submodules sit flat, as siblings, and must stay that way: all six Rust
 binaries declare `kallos = { path = "../kallos-lib" }`.
 
 | | |
@@ -38,6 +38,7 @@ binaries declare `kallos = { path = "../kallos-lib" }`.
 | `kallosd/` | the session daemon and session root |
 | `kallosctl/` | the control CLI |
 | `hajime/` | the overlay |
+| `phylax/` | the locker and greeter |
 | `kallos-lib/` | the `kallos` crate the Rust binaries share |
 | `yggdrasil/` `torrential/` `renzoku/` | apps — opt-in, `--apps` |
 

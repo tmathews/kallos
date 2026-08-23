@@ -30,3 +30,7 @@
 	path = renzoku
 	url = git@github.com:tmathews/renzoku.git
 	branch = main
+[submodule "phylax"]
+	path = phylax
+	url = git@github.com:tmathews/phylax.git
+	branch = main

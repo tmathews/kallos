@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Build the whole Kallos suite from the top of the tree.
 #
-# The suite is now three Rust binaries and one C one:
+# The suite is now four Rust binaries and one C one:
 #
 #   kallosd    the system daemon and session root   (Rust, replaces kdaemon)
 #   kallosctl  the control CLI                      (Rust, replaces the C one)
 #   hajime     the overlay                          (Rust, replaced apps/kstart)
+#   phylax     the locker and greeter              (Rust, replaces swaylock)
 #   kosmos        the compositor — Kosmos              (C, ./kosmos)
 #
 # kosmos is the last C component and now has its own tree here — ./kosmos, the
@@ -35,8 +36,8 @@ case "$BT" in
 esac
 
 # The Rust crates, in dependency order. kallos-lib is not listed: it is a path
-# dependency of all three and cargo builds it as needed.
-crates=(kallosd kallosctl hajime)
+# dependency of all four and cargo builds it as needed.
+crates=(kallosd kallosctl hajime phylax)
 
 # The apps are opt-in, so the session-suite iteration loop — which is what
 # test.sh and everyday work run — stays as short as it is. They are ordinary

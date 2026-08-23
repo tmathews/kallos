@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Kallos — the four binaries plus the two data files that are still
+# Install Kallos — the five binaries plus the two data files that are still
 # live. Nothing else.
 #
 # This is the Rust cutover: the session runs `kallosd` and the Rust
@@ -36,8 +36,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 kosmos_src="${KWM_SRC:-$root/kosmos}"
 kosmos_bin="$kosmos_src/builds/$cfg/src/kosmos"
 
-# name -> built path. The Rust three come from their own crate target dirs.
-crates=(kallosd kallosctl hajime)
+# name -> built path. The Rust four come from their own crate target dirs.
+crates=(kallosd kallosctl hajime phylax)
 
 # APPS=1 adds the three opt-in apps, exactly as scripts/build.sh does — build
 # and install must agree or the preflight below fails on binaries that were
@@ -62,7 +62,7 @@ echo ">> installing Kallos ($cfg) -> ${destdir:+$destdir:}$prefix"
 # Binaries -> bin/. No rpath fixup: kosmos static-links its private deps and the
 # Rust binaries link only system shared libs, all on the default loader path.
 # kallosd resolves `kosmos` and `hajime` as SIBLINGS of itself (spawn::sibling),
-# which is why all four land in one directory and `kallosd --wm --overlay`
+# which is why all five land in one directory and `kallosd --wm --overlay`
 # needs no paths.
 install -d "$bindir"
 install -m755 "$kosmos_bin" "$bindir/kosmos"
