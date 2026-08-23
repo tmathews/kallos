@@ -115,3 +115,21 @@ else
 	echo "   !! /etc/pam.d/phylax not installed (no write access) — phylax --lock needs it:"
 	echo "      sudo install -m644 $root/phylax/data/pam/phylax /etc/pam.d/phylax"
 fi
+
+# The login screen under greetd: the greeter session script beside the
+# binaries (greetd's PATH finds it), and a config.toml only if greetd has
+# none yet — once it exists it is the admin's. Nothing is enabled here:
+# `systemctl enable greetd` takes the VT from getty and needs a re-login,
+# which is scripts/deps.sh's checklist business, never an installer's.
+install -m755 "$root/phylax/data/greetd/phylax-greeter" "$bindir/phylax-greeter"
+echo "   bin/phylax-greeter"
+greetd_conf="$destdir/etc/greetd/config.toml"
+if [ -e "$greetd_conf" ]; then
+	echo "   /etc/greetd/config.toml exists — left alone (see phylax/data/greetd/config.toml)"
+elif [ -d "$destdir/etc/greetd" ] && [ -w "$destdir/etc/greetd" ] || [ -n "$destdir" ]; then
+	install -d "$destdir/etc/greetd"
+	install -m644 "$root/phylax/data/greetd/config.toml" "$greetd_conf"
+	echo "   /etc/greetd/config.toml"
+else
+	echo "   !! /etc/greetd/config.toml not installed (greetd not installed, or no write access)"
+fi

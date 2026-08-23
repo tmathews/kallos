@@ -68,11 +68,11 @@ apps=(openssl)
 # Wi-Fi is iwd, not NetworkManager: see kallosd/src/sys/wifi.rs.
 runtime=(xdg-desktop-portal xdg-desktop-portal-gtk pipewire-pulse bluez
          bluez-utils udisks2 iwd noto-fonts noto-fonts-cjk
-         noto-fonts-emoji xorg-xwayland pciutils)
+         noto-fonts-emoji xorg-xwayland pciutils greetd)
 
-# Nice to have: the default locker and terminal, yggdrasil's clipboard and file
-# handlers, `lspci` for kallosd's sysinfo, and wlroots' optional plane-offload
-# and colour-management deps.
+# Nice to have: a fallback locker (phylax is the default now) and a terminal,
+# yggdrasil's clipboard and file handlers, `lspci` for kallosd's sysinfo, and
+# wlroots' optional plane-offload and colour-management deps.
 optional=(swaylock foot wl-clipboard imv mpv libliftoff lcms2)
 
 # ---- what's missing -------------------------------------------------------
@@ -162,6 +162,15 @@ id -nG | grep -qw input || {
 }
 [ -n "${XDG_RUNTIME_DIR:-}" ] ||
 	say "XDG_RUNTIME_DIR unset -> expected from pam_systemd at login"
+# The login screen. greetd takes the VT from getty when enabled, which is a
+# reboot-scale change — reported, never done. Its `greeter` user needs the
+# same seat access kosmos needs (the `seat` group under seatd).
+if command -v greetd >/dev/null; then
+	systemctl is-enabled --quiet greetd 2>/dev/null ||
+		say "greetd not enabled    -> sudo systemctl enable greetd   (takes tty1 at next boot)"
+	id -nG greeter 2>/dev/null | grep -qw seat ||
+		say "greeter not in 'seat' -> sudo usermod -aG seat greeter"
+fi
 pacman -T vulkan-driver >/dev/null 2>&1 ||
 	say "no Vulkan ICD         -> install vulkan-radeon / vulkan-intel / nvidia-utils"
 command -v xwayland-satellite >/dev/null ||
