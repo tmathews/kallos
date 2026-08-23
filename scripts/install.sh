@@ -102,3 +102,16 @@ if [ ${#stale[@]} -gt 0 ]; then
 fi
 
 echo ">> done — ensure $prefix/bin is on PATH"
+
+# PAM service for `phylax --lock`. Under /etc, never $prefix: PAM reads only
+# /etc/pam.d, so a user-prefix install cannot place it and says so — the
+# locker then fails every password until it is installed by hand.
+pamdir="$destdir/etc/pam.d"
+if [ -d "$pamdir" ] && [ -w "$pamdir" ] || [ -n "$destdir" ]; then
+	install -d "$pamdir"
+	install -m644 "$root/phylax/data/pam/phylax" "$pamdir/phylax"
+	echo "   /etc/pam.d/phylax"
+else
+	echo "   !! /etc/pam.d/phylax not installed (no write access) — phylax --lock needs it:"
+	echo "      sudo install -m644 $root/phylax/data/pam/phylax /etc/pam.d/phylax"
+fi
