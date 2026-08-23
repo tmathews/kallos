@@ -29,9 +29,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
 
-# The eight. kstart is frozen legacy and kbrowser has no remote yet; both stay
+# The nine. kstart is frozen legacy and kbrowser has no remote yet; both stay
 # as plain sibling clones, ignored by the root (see .gitignore).
-mods=(kosmos kallos-lib kallosd kallosctl hajime yggdrasil torrential renzoku)
+mods=(kosmos kallos-lib kallosd kallosctl hajime yggdrasil torrential renzoku phylax)
 
 red=$'\033[31m'; grn=$'\033[32m'; ylw=$'\033[33m'; dim=$'\033[2m'; off=$'\033[0m'
 ok()  { printf '  %sOK%s   %-12s %s\n'   "$grn" "$off" "$1" "${2-}"; }
