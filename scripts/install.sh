@@ -128,7 +128,10 @@ install -m755 "$root/phylax/data/greetd/phylax-greeter" "$bindir/phylax-greeter"
 echo "   bin/phylax-greeter"
 greetd_conf="$destdir/etc/greetd/config.toml"
 if [ -e "$greetd_conf" ]; then
-	echo "   /etc/greetd/config.toml exists — left alone (see phylax/data/greetd/config.toml)"
+	# Arch's greetd package ships one (agreety, the text greeter), so on a
+	# fresh install this is the line you will see — and the one to act on.
+	echo "   /etc/greetd/config.toml exists — left alone; to use the phylax login screen:"
+	echo "      sudo install -m644 $root/phylax/data/greetd/config.toml /etc/greetd/config.toml"
 elif [ -d "$destdir/etc/greetd" ] && [ -w "$destdir/etc/greetd" ] || [ -n "$destdir" ]; then
 	install -d "$destdir/etc/greetd"
 	install -m644 "$root/phylax/data/greetd/config.toml" "$greetd_conf"

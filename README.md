@@ -20,6 +20,7 @@ updates instead — there is no separate init, because `up` is idempotent.
 Then either enable the login screen and reboot:
 
 ```sh
+sudo install -m644 phylax/data/greetd/config.toml /etc/greetd/config.toml   # the package's own config picks agreety
 sudo systemctl enable greetd     # phylax greets on tty1 from the next boot
 ```
 
