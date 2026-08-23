@@ -126,7 +126,9 @@ fi
 # which is scripts/deps.sh's checklist business, never an installer's.
 install -m755 "$root/phylax/data/greetd/phylax-greeter" "$bindir/phylax-greeter"
 echo "   bin/phylax-greeter"
-# greetd's unit, made to wait for the GPU: see the drop-in's comment.
+# greetd's unit: a restart budget that outlasts a slow GPU probe, and no
+# ordering guess. It assumes the machine's KMS driver is in the initramfs —
+# see the drop-in's comment, which is the other half of that change.
 greetd_dropin="$destdir/etc/systemd/system/greetd.service.d"
 if [ -d "$destdir/etc/systemd/system" ] && [ -w "$destdir/etc/systemd/system" ] || [ -n "$destdir" ]; then
 	install -d "$greetd_dropin"
