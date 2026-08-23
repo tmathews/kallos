@@ -126,6 +126,13 @@ fi
 # which is scripts/deps.sh's checklist business, never an installer's.
 install -m755 "$root/phylax/data/greetd/phylax-greeter" "$bindir/phylax-greeter"
 echo "   bin/phylax-greeter"
+# greetd's unit, made to wait for the GPU: see the drop-in's comment.
+greetd_dropin="$destdir/etc/systemd/system/greetd.service.d"
+if [ -d "$destdir/etc/systemd/system" ] && [ -w "$destdir/etc/systemd/system" ] || [ -n "$destdir" ]; then
+	install -d "$greetd_dropin"
+	install -m644 "$root/phylax/data/systemd/greetd-kallos.conf" "$greetd_dropin/kallos.conf"
+	echo "   /etc/systemd/system/greetd.service.d/kallos.conf  (systemctl daemon-reload to apply)"
+fi
 greetd_conf="$destdir/etc/greetd/config.toml"
 if [ -e "$greetd_conf" ]; then
 	# Arch's greetd package ships one (agreety, the text greeter), so on a
