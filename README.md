@@ -24,6 +24,19 @@ sudo install -m644 phylax/data/greetd/config.toml /etc/greetd/config.toml   # th
 sudo systemctl enable greetd     # phylax greets on tty1 from the next boot
 ```
 
+and optionally take the boot itself — kernel flags, the GPU into the
+initramfs, the loader timeout — so the machine goes from the firmware logo
+straight to the login screen with no console in between:
+
+```sh
+./kallos boot          # report what would change; writes nothing
+./kallos boot apply    # ...and `./kallos boot revert` puts it all back
+```
+
+That one is opt-in and never part of `up`: it edits `/etc` and `/boot` and
+takes effect at the next reboot. `phylax/docs/boot.md` has the measurements
+behind each flag.
+
 or start a session from a TTY by hand:
 
 ```sh

@@ -42,6 +42,9 @@ Subcommands
   pin [-m MSG]  record where the submodules are now
   push          publish every submodule, so the pins are clonable
   deps          system packages and muon, nothing else
+  boot [MODE]   the boot configuration: kernel flags, initramfs, loader
+                timeout. check (default) | apply | revert. Opt-in and never
+                part of `up` — it edits /etc and /boot and needs a reboot
   doctor        preflight only — reports, writes nothing
   build|install|verify   pass straight through to scripts/
 
@@ -229,6 +232,7 @@ case "$sub" in
 	pin)     "$root/scripts/sync.sh" pin "${args[@]+"${args[@]}"}" ;;
 	push)    "$root/scripts/sync.sh" push ;;
 	deps)    "$root/scripts/deps.sh" install ;;
+	boot)    "$root/scripts/boot.sh" "${args[@]+"${args[@]}"}" ;;
 	doctor)  cmd_doctor ;;
 	build)   phase_build ;;
 	install) phase_install ;;
