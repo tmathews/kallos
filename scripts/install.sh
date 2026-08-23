@@ -111,6 +111,9 @@ if [ -d "$pamdir" ] && [ -w "$pamdir" ] || [ -n "$destdir" ]; then
 	install -d "$pamdir"
 	install -m644 "$root/phylax/data/pam/phylax" "$pamdir/phylax"
 	echo "   /etc/pam.d/phylax"
+	# greetd's greeter-session service, which Arch's package does not ship.
+	install -m644 "$root/phylax/data/pam/greetd-greeter" "$pamdir/greetd-greeter"
+	echo "   /etc/pam.d/greetd-greeter"
 else
 	echo "   !! /etc/pam.d/phylax not installed (no write access) — phylax --lock needs it:"
 	echo "      sudo install -m644 $root/phylax/data/pam/phylax /etc/pam.d/phylax"
