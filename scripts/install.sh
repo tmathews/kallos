@@ -135,6 +135,19 @@ if [ -d "$destdir/etc/systemd/system" ] && [ -w "$destdir/etc/systemd/system" ] 
 	install -m644 "$root/phylax/data/systemd/greetd-kallos.conf" "$greetd_dropin/kallos.conf"
 	echo "   /etc/systemd/system/greetd.service.d/kallos.conf  (systemctl daemon-reload to apply)"
 fi
+# logind: end the session's processes with the session, so a compositor crash
+# does not leave survivors holding the logind session open and the next login
+# inheriting the dead session's user manager. See the drop-in's comment; the
+# other half of that fix is kallosd's session activation.
+logind_dropin="$destdir/etc/systemd/logind.conf.d"
+if [ -d "$destdir/etc/systemd" ] && [ -w "$destdir/etc/systemd" ] || [ -n "$destdir" ]; then
+	install -d "$logind_dropin"
+	install -m644 "$root/kallosd/data/systemd/logind-kallos.conf" "$logind_dropin/kallos.conf"
+	echo "   /etc/systemd/logind.conf.d/kallos.conf  (systemctl restart systemd-logind to apply)"
+else
+	echo "   !! /etc/systemd/logind.conf.d/kallos.conf not installed (no write access)"
+	echo "      sudo install -Dm644 $root/kallosd/data/systemd/logind-kallos.conf /etc/systemd/logind.conf.d/kallos.conf"
+fi
 greetd_conf="$destdir/etc/greetd/config.toml"
 if [ -e "$greetd_conf" ]; then
 	# Arch's greetd package ships one (agreety, the text greeter), so on a

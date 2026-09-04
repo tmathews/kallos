@@ -1,0 +1,93 @@
+id = 4
+kind = "bug"
+title = "Crash recovery leaves a poisoned systemd user session behind"
+description = """
+When kosmos dies mid-session (segfault, or the watchdog's abort() on a wedged
+event loop), greetd brings the login screen back, but the session the user
+logs back INTO is broken: no portals, a stale logind session on tty1, and a
+duplicated input method. The compositor's death collapses the process tree
+(greetd -> kallosd -> kosmos) while the systemd side of the session is left
+half-standing, and nothing on the way back in repairs it.
+
+Captured instance: boot -5, Sep 01 18:24:19 (kosmos segfault in
+kwm_arrange_layers, see the kosmos tracker). The two seconds after it:
+
+  18:24:19.786  systemd[934]: Stopped target Kallos compositor session.
+  18:24:19.789  greetd: pam_unix(greetd:session): session closed for thomas
+  18:24:19.797  logind: Session 3 logged out. Waiting for processes to exit.
+  18:24:21.331  systemd[934]: Starting Portal service...
+  18:24:21.526  xdg-desktop-portal-gtk[343573]: cannot open display: :0   (x5)
+  18:24:21.759  xdg-desktop-portal-gtk.service: Failed, result 'start-limit-hit'
+  18:24:21.801  xdg-desktop-portal-wlr: wayland: failed to connect to display (x4)
+  18:24:22.581  xdg-desktop-portal-wlr.service: Failed, result 'start-limit-hit'
+  18:24:21.828  systemd[934]: Started Portal service.
+
+systemd[934] is thomas's user manager, still running. Four defects:
+
+1. The activation environment is never unset. session_activate() does
+   UpdateActivationEnvironment + SetEnvironment + StartUnit, but
+   session_deactivate() (kallosd/src/sys/systemd.rs:54) only does StopUnit.
+   WAYLAND_DISPLAY, DISPLAY and XDG_SESSION_TYPE outlive the compositor, so a
+   bus activation in the gap starts a portal against a dead socket -- and
+   xdg-desktop-portal-wlr's ConditionEnvironment=WAYLAND_DISPLAY guard, the
+   one thing that should have stopped it, passes.
+
+2. Nothing resets latched failures on the way back in. The portal backends are
+   left failed/start-limit-hit and xdg-desktop-portal.service is left ACTIVE
+   with a poisoned environment. StartUnit kallos-session.target clears
+   neither: PartOf= only stops dependents, and a start-limit latch needs an
+   explicit ResetFailed. kallosd never calls ResetFailed anywhere.
+
+3. Teardown only runs on a graceful exit. main.rs:1098 guards
+   session_deactivate behind d.session_active in the normal shutdown path.
+   SIGKILL kallosd -- what you do from another VT when kosmos wedges -- and
+   kallos-session.target stays active, so the next StartUnit is a no-op and
+   graphical-session.target is never re-reached at all.
+
+4. Session leftovers keep the dirty user manager alive. KillUserProcesses=no
+   (Arch default) plus spawn::detached()'s double-fork (spawn.rs:141) means
+   fcitx5/mozc_server, rclone mounts, terminals and anything the launcher
+   spawned survive kallosd. They sit in the old session scope, so logind never
+   removes the session, so user@1000.service is never GC'd and the next login
+   reuses the same dirty manager. In the captured log mozc_server and two
+   rclones were still there at reboot, five minutes later. Secondary: a stale
+   session on tty1 in loginctl, and ~/.config/kallos/startup re-runs into a
+   second fcitx5. Conversely, when nothing lingers the manager IS torn down --
+   and a fast relogin then races 'Stopping User Manager' against 'Starting
+   User Manager'.
+
+Fix, in three tiers:
+
+A. Make session activation idempotent from any prior state, which is the only
+   thing that can fix (3) -- a SIGKILL has no teardown side. session_activate
+   becomes StopUnit -> ResetFailed -> SetEnvironment -> StartUnit; add
+   unset_manager_env() (Manager.UnsetEnvironment) and blank the same keys in
+   the D-Bus activation environment (D-Bus has no unset; empty string is the
+   only lever) from session_deactivate; drop the d.session_active guard at
+   main.rs:1098.
+
+B. KillUserProcesses=yes via a logind drop-in, so the session actually ends,
+   user@1000 restarts clean, and no orphans survive. Costs tmux/nohup
+   survivors across a crash; accepted.
+
+C. Respawn the compositor instead of ending the session (main.rs:1370 sets
+   d.quit = true). The plumbing already exists and was built for this:
+   session_register's startup guard is explicitly 'once per daemon lifetime, a
+   compositor restart re-registering is a no-op', and the SUBSCRIBE handlers
+   re-sync 'a late or reconnecting compositor' for DISPLAY/IDLE/APPEARANCE.
+   Bounded respawn (mirror LOCKER_RESPAWN_MAX), re-launch the overlay (it
+   exit(1)s on disconnect, hajime/src/main.rs:167), re-run session_activate.
+   SECURITY RULE: if d.locked, do NOT respawn -- kosmos comes up unlocked, so
+   respawning a crashed locked session would drop the lock screen. Crash while
+   unlocked -> respawn; crash while locked -> greeter.
+
+Wayland clients die either way, but (C) is the difference between landing on a
+fresh desktop with the session, mounts, user manager, portals and input method
+intact, and landing at a login screen that hands back a broken session. Since
+kosmos/docs/kosmos-freeze-debug.md deliberately turns wedges into abort()s,
+this path is taken by design and needs to be the good one."""
+author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
+severity = 0
+state = "open"
+created_at = "2026-09-04T16:23:17.860729482Z"
+updated_at = "2026-09-04T16:23:17.860732900Z"
