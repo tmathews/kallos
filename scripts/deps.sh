@@ -171,6 +171,23 @@ if command -v greetd >/dev/null; then
 	id -nG greeter 2>/dev/null | grep -qw seat ||
 		say "greeter not in 'seat' -> sudo usermod -aG seat greeter"
 fi
+# The network stack under kallosd's Wi-Fi pane. iwd only associates: without
+# systemd-networkd nothing asks for a lease, and unless /etc/resolv.conf is the
+# symlink to systemd-resolved's stub, a captive-portal login hangs for minutes
+# rather than loading. scripts/net.sh sets all of it up in one go; this only
+# reports, like everything else here.
+netbad=()
+[ -L /etc/resolv.conf ] ||
+	netbad+=("/etc/resolv.conf is a file, not the resolved stub - portals hang")
+compgen -G "/etc/systemd/network/*.network" >/dev/null ||
+	netbad+=("no .network files - networkd would hand out no leases")
+for u in systemd-networkd systemd-resolved iwd; do
+	systemctl is-enabled --quiet "$u" 2>/dev/null || netbad+=("$u not enabled")
+done
+if [ ${#netbad[@]} -gt 0 ]; then
+	say "network not set up    -> ./kallos net   (reports; then ./kallos net apply)"
+	for b in "${netbad[@]}"; do say "                         $b"; done
+fi
 pacman -T vulkan-driver >/dev/null 2>&1 ||
 	say "no Vulkan ICD         -> install vulkan-radeon / vulkan-intel / nvidia-utils"
 command -v xwayland-satellite >/dev/null ||

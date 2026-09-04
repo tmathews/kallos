@@ -37,6 +37,19 @@ That one is opt-in and never part of `up`: it edits `/etc` and `/boot` and
 takes effect at the next reboot. `phylax/docs/boot.md` has the measurements
 behind each flag.
 
+On a fresh Arch install, take the network too — `iwd` only associates, so
+without this there is no DHCP lease, and `/etc/resolv.conf` stays the real file
+Arch ships rather than the symlink to systemd-resolved's stub, which is what
+makes a captive-portal login hang for minutes instead of loading:
+
+```sh
+./kallos net           # report what would change; writes nothing
+./kallos net apply     # ...and `./kallos net revert` puts it all back
+```
+
+Also opt-in, for the same reason. `./kallos doctor` says when a machine needs
+it.
+
 or start a session from a TTY by hand:
 
 ```sh
@@ -120,6 +133,8 @@ independently runnable, and running them directly is the normal way to iterate.
 | `scripts/build.sh` | the compositor through kosmos's own muon build, then cargo |
 | `scripts/install.sh` | copies into `$PREFIX`; never builds |
 | `scripts/verify.sh` | 21 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
+| `scripts/boot.sh` | opt-in: kernel flags, the GPU into the initramfs, loader timeout |
+| `scripts/net.sh` | opt-in: networkd/resolved/iwd, DHCP, and the resolv.conf stub symlink |
 | `test.sh` | build, install, and run a session on the primary TTY |
 
 The build always runs unprivileged and the install only copies, so cargo never

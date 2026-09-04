@@ -1,0 +1,32 @@
+id = 3
+kind = "todo"
+title = "Captive portal login page has no route into the desktop"
+description = """
+A captive-portal login page has no route into the desktop. `./kallos net`
+now stops DNS hanging behind a portal, but finding the portal URL is still a
+terminal job.
+
+The prototype exists — a `portal` shell script that reads the RFC 8910 capport
+URL systemd-networkd already learned from DHCP option 114 (`networkctl status`
+-> "Captive Portal:"), fetches the RFC 8908 JSON for `user-portal-url`, and
+falls back to probing the gateway for an HTTP redirect. It was written
+alongside scripts/net.sh and is at
+/tmp/claude-1000/-workspace-tmp/46e93eda-8c0d-4016-af08-dfc664e5595e/scratchpad/portal
+(a scratch path — transcribe it before it is collected).
+
+Not shipped with scripts/net.sh for two reasons:
+
+  * the superproject holds no source of its own, so a shell helper has no home
+    here; it belongs in a submodule.
+  * hajime never spawns anything. It sends command verbs to kallosd
+    (`lists.command_secret(domain::WIFI, verb::CONNECT, ...)`,
+    hajime/src/settings.rs), so a "Login page" pill beside Join in the Wi-Fi
+    pane needs a new WIFI verb, the capport probe in kallosd/src/sys/, and the
+    UI work — not a script drop.
+
+Whichever way it lands, the prototype needs `jq`, which is not in any of
+scripts/deps.sh's package lists."""
+author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
+state = "open"
+created_at = "2026-09-04T03:27:22.915853842Z"
+updated_at = "2026-09-04T03:27:22.920269035Z"

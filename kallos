@@ -45,6 +45,10 @@ Subcommands
   boot [MODE]   the boot configuration: kernel flags, initramfs, loader
                 timeout. check (default) | apply | revert. Opt-in and never
                 part of `up` — it edits /etc and /boot and needs a reboot
+  net [MODE]    the network a fresh install needs: networkd, resolved, iwd,
+                DHCP config and the resolv.conf stub symlink that stops
+                captive-portal logins hanging. check (default) | apply |
+                revert. Opt-in and never part of `up` — it edits /etc
   doctor        preflight only — reports, writes nothing
   build|install|verify   pass straight through to scripts/
 
@@ -233,6 +237,7 @@ case "$sub" in
 	push)    "$root/scripts/sync.sh" push ;;
 	deps)    "$root/scripts/deps.sh" install ;;
 	boot)    "$root/scripts/boot.sh" "${args[@]+"${args[@]}"}" ;;
+	net)     "$root/scripts/net.sh" "${args[@]+"${args[@]}"}" ;;
 	doctor)  cmd_doctor ;;
 	build)   phase_build ;;
 	install) phase_install ;;
