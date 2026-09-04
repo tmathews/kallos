@@ -3,6 +3,17 @@ kind = "bug"
 title = "Cannot go back after entering username, stuck on password"
 description = ""
 author = "Thomas Mathews <thomas.mathews@kleientertainment.com>"
-state = "open"
+state = "closed"
+resolution = "duplicate"
 created_at = "2026-08-30T12:13:08.874747201Z"
-updated_at = "2026-08-30T12:13:08.890847452Z"
+updated_at = "2026-09-04T03:26:00.190068387Z"
+
+[[notes]]
+timestamp = "2026-09-04T03:26:00.188638220Z"
+author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
+body = """
+This is phylax's, not the suite's: the greeter (phylax --greet) is what takes
+the username and then never offers it again. Moved to phylax's own tracker,
+which this created — /workspace/dev/kallos/phylax/.bugs, #1 there — and fixed
+in that repo (Escape on an empty field walks back out of the password prompt).
+Closing here as tracked, and fixed, there."""
