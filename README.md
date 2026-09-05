@@ -132,7 +132,7 @@ independently runnable, and running them directly is the normal way to iterate.
 | `scripts/sync.sh` | the submodule engine behind `sync`/`status`/`pin`/`push` |
 | `scripts/build.sh` | the compositor through kosmos's own muon build, then cargo |
 | `scripts/install.sh` | copies into `$PREFIX`; never builds |
-| `scripts/verify.sh` | 21 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
+| `scripts/verify.sh` | 22 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
 | `scripts/boot.sh` | opt-in: kernel flags, the GPU into the initramfs, loader timeout |
 | `scripts/net.sh` | opt-in: networkd/resolved/iwd, DHCP, and the resolv.conf stub symlink |
 | `test.sh` | build, install, and run a session on the primary TTY |

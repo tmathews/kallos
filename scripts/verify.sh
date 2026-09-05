@@ -92,6 +92,12 @@ printf '/usr/bin/touch %s/startup-marker\n' "$V" > "$V/home/.config/kallos/start
 # The locker under test, with its fake authenticator: "ok" unlocks. Appended,
 # so it overrides whatever the seeded settings say.
 printf 'locker = %s --lock --dry\n' "$PHYLAX" >> "$V/home/.config/kallos/settings"
+# Hot corners fire an action, so the only way to observe one from outside is to
+# make that action observable. Both top corners touch the same marker; the
+# checks unlink it between gestures.
+printf 'corner_tl = spawn touch %s\ncorner_tr = spawn touch %s\n' \
+	"$V/hotcorner-marker" "$V/hotcorner-marker" \
+	>> "$V/home/.config/kallos/settings"
 
 export HOME="$V/home"
 # $XDG_RUNTIME_DIR is redirected, and PulseAudio lives in it — without this the
@@ -219,6 +225,28 @@ else
 	[ ! -e "$V/startup-marker" ] \
 		&& ok "config reload did not re-run the startup commands" \
 		|| no "config reload re-ran the startup commands"
+
+	# ---- hot corners ------------------------------------------------------
+	# Before the display block, which leaves the two outputs stacked
+	# vertically — these checks are about the seam between a LEFT and a RIGHT
+	# screen, which is the arrangement the headless backend starts in.
+	HCC="$kosmos_src/builds/$cfg/apps/hotcorner-client/hotcorner-client"
+	if [ ! -x "$HCC" ]; then
+		skp "no hotcorner-client built — hot-corner checks skipped"
+	else
+		export WAYLAND_DISPLAY XDG_RUNTIME_DIR
+		WAYLAND_DISPLAY=$(sed -n 's/.*WAYLAND_DISPLAY=\([a-z0-9-]*\).*/\1/p' "$log" | head -1)
+		XDG_RUNTIME_DIR="$V/rt-r"
+		if "$HCC" "$V/hotcorner-marker" > "$V/hotcorner.txt" 2>&1; then
+			ok "hot corners: a cross-monitor sweep never fires, a flick does"
+		else
+			no "hot-corner gate failed"
+			sed 's/^/       /' "$V/hotcorner.txt"
+		fi
+		rm -f "$V/hotcorner-marker"
+		unset WAYLAND_DISPLAY
+		XDG_RUNTIME_DIR="$V/rt-r"
+	fi
 
 	# ---- the display domain -----------------------------------------------
 	# Reachable here, and only here: `display` verbs go to the compositor this
