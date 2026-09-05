@@ -88,6 +88,76 @@ kosmos/docs/kosmos-freeze-debug.md deliberately turns wedges into abort()s,
 this path is taken by design and needs to be the good one."""
 author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
 severity = 0
-state = "open"
+state = "closed"
+resolution = "fixed"
 created_at = "2026-09-04T16:23:17.860729482Z"
-updated_at = "2026-09-04T16:23:17.860732900Z"
+updated_at = "2026-09-05T14:26:51.633170022Z"
+
+[[notes]]
+timestamp = "2026-09-05T01:18:47.229014315Z"
+author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
+body = """
+Tiers A, B and C are implemented (kallosd 3e8590c, superproject 5e1b174), and
+there is now a way to trigger the thing deliberately.
+
+kosmos a5c9b75 adds KWM_CRASH_KEY, arming two keys checked beside the VT switch
+so they survive the lock screen, the overview and a client's shortcuts
+inhibitor:
+
+  Ctrl+Alt+Shift+BackSpace   abort() now — the crash path
+  Ctrl+Alt+Shift+Delete      wedge the event loop — the freeze path, which the
+                             watchdog turns into the crash path
+
+phylax b5d0a5a adds `phylax-type --combo ctrl+alt+shift+BackSpace` so a script
+on a headless rig can press them.
+
+Verified end to end on a headless rig with a private D-Bus:
+
+  - combo with KWM_CRASH_KEY unset: compositor untouched (the gate holds)
+  - combo with it set: "aborting on purpose", compositor respawned 37961->38019
+  - Delete with it set: "event loop stalled for 5502 ms — aborting for a core
+    dump", compositor respawned 38090->38222
+
+Also verified: three quick crashes end the session, and one compositor that
+lived 68.1s reset the budget to 1/3.
+
+STILL UNVERIFIED, and it is the load-bearing half: the systemd sequence
+(stop_and_settle / ResetFailed / UnsetEnvironment) has never run against a real
+user manager. The rig's private bus has no org.freedesktop.systemd1, so those
+calls degraded to warnings exactly as designed. Method signatures are confirmed
+against the live manager with busctl, and the stop propagating through
+graphical-session.target (StopWhenUnneeded=yes) is what the Sep 01 journal
+shows happening — but the whole path has only been reasoned about, not run.
+
+To close this: install, reboot (the logind drop-in needs it), then press
+Ctrl+Alt+Shift+Delete with KWM_CRASH_KEY=1 in the session environment and check
+that the desktop comes back with working portals rather than dropping to the
+greeter."""
+
+[[notes]]
+timestamp = "2026-09-05T14:26:51.633167006Z"
+author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
+body = """
+Verified working on the live machine by Thomas — the half the headless rig
+could not reach (the systemd sequence against a real user manager) is now
+confirmed in practice, so this is closed.
+
+Shipped:
+
+  kallosd 3e8590c  idempotent session activation (env -> stop-and-settle ->
+                   ResetFailed -> start), teardown clears the environment it
+                   published, gated on owning the session; compositor respawn
+                   with a 3-strike budget that resets after 60s of uptime, and
+                   never into a locked or locking session
+  suite   5e1b174  this item, and install.sh placing the logind drop-in
+  kosmos  a5c9b75  KWM_CRASH_KEY, so the recovery path can be triggered on
+                   demand instead of waited for
+  phylax  b5d0a5a  phylax-type --combo, to press it from a script
+
+KWM_CRASH_KEY is armed for the session from ~/.profile, which greetd sources
+(source_profile = true) and kallosd passes to kosmos. Remove that line to
+disarm.
+
+Left open elsewhere: kosmos #65 (the wlr_arrange_layers segfault that started
+this — the crash itself is still unfixed, only the recovery from it) and
+kosmos #66 (the X display reported on a race, which the respawn made visible)."""
