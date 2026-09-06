@@ -10,6 +10,7 @@ Filed at the suite level: no repo owns this yet. kwm already implements
 ext-session-lock (src/lock.c) and kallosd owns the session, but the lock and
 login surfaces themselves are unwritten apps."""
 author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
-state = "open"
+state = "closed"
+resolution = "fixed"
 created_at = "2026-08-13T03:44:22.715547892Z"
-updated_at = "2026-08-13T03:44:22.715549364Z"
+updated_at = "2026-09-05T15:19:47.599475083Z"
