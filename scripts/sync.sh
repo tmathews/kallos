@@ -28,16 +28,22 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
+. "$root/scripts/lib/out.sh"
 
-# The nine. kstart is frozen legacy and kbrowser has no remote yet; both stay
-# as plain sibling clones, ignored by the root (see .gitignore).
+# The nine. kbrowser has no remote yet, so it stays a plain sibling clone,
+# ignored by the root (see .gitignore).
 mods=(kosmos kallos-lib kallosd kallosctl hajime yggdrasil torrential renzoku phylax)
 
-red=$'\033[31m'; grn=$'\033[32m'; ylw=$'\033[33m'; dim=$'\033[2m'; off=$'\033[0m'
-ok()  { printf '  %sOK%s   %-12s %s\n'   "$grn" "$off" "$1" "${2-}"; }
-act() { printf '  %sMOVE%s %-12s %s\n'   "$grn" "$off" "$1" "${2-}"; }
-warn(){ printf '  %sSKIP%s %-12s %s\n'   "$ylw" "$off" "$1" "${2-}"; bad=$((bad + 1)); }
-err() { printf '  %sFAIL%s %-12s %s\n'   "$red" "$off" "$1" "${2-}"; bad=$((bad + 1)); }
+# One row per submodule. These shadow nothing in lib/out.sh: the plain labels
+# there take a message, these take a name and a detail, so they get their own
+# names rather than quietly meaning something different in this one file.
+# MOVE is green because it is the sync doing its job, not a warning.
+r_ok()   { row_grn OK   "$1" "${2-}"; }
+r_move() { row_grn MOVE "$1" "${2-}"; }
+r_skip() { row_ylw SKIP "$1" "${2-}"; bad=$((bad + 1)); }
+r_fail() { row_red FAIL "$1" "${2-}"; bad=$((bad + 1)); }
+# The dim/yellow the status table below paints its own columns with.
+ylw="$_ylw"; dim="$_dim"; off="$_off"
 bad=0
 
 # ---- helpers --------------------------------------------------------------
@@ -102,21 +108,21 @@ sync_one() {
 	#    path a plain `git clone` (no --recursive) lands on.
 	if [ ! -e "$m/.git" ]; then
 		if [ "${DRY:-0}" = 1 ]; then
-			act "$m" "would clone"
+			r_move "$m" "would clone"
 			return
 		fi
 		git submodule update --init -- "$m" >/dev/null ||
-			{ err "$m" "clone failed"; return; }
+			{ r_fail "$m" "clone failed"; return; }
 	fi
 
-	rem=$(remote_of "$m") || { err "$m" "no usable remote — add one named 'origin'"; return; }
+	rem=$(remote_of "$m") || { r_fail "$m" "no usable remote — add one named 'origin'"; return; }
 	[ "${DRY:-0}" = 1 ] || git -C "$m" fetch --prune --quiet "$rem" 2>/dev/null || true
 
 	if [ "$mode" = latest ]; then
-		target=$(sha "$m" "$rem/main") || { err "$m" "no $rem/main"; return; }
+		target=$(sha "$m" "$rem/main") || { r_fail "$m" "no $rem/main"; return; }
 	else
 		target=$(pinned_of "$m")
-		[ -n "$target" ] || { warn "$m" "no pin recorded yet — run ./kallos pin"; return; }
+		[ -n "$target" ] || { r_skip "$m" "no pin recorded yet — run ./kallos pin"; return; }
 	fi
 	head=$(sha "$m")
 
@@ -127,9 +133,9 @@ sync_one() {
 	if [ "$head" = "$target" ] && on_main "$m" &&
 	   [ -n "$(git -C "$m" config --get branch.main.remote || true)" ]; then
 		if is_dirty "$m"; then
-			ok "$m" "${dim}${head:0:8}${off} ${ylw}(local changes, left alone)${off}"
+			r_ok "$m" "${dim}${head:0:8}${off} ${ylw}(local changes, left alone)${off}"
 		else
-			ok "$m" "${dim}${head:0:8}${off}"
+			r_ok "$m" "${dim}${head:0:8}${off}"
 		fi
 		return
 	fi
@@ -138,7 +144,7 @@ sync_one() {
 	#    dev checkout is that an interrupted edit survives an update.
 	if is_dirty "$m"; then
 		[ "${DRY:-0}" = 1 ] || fix_upstream "$m" "$rem"
-		warn "$m" "local changes — commit or stash, then re-run"
+		r_skip "$m" "local changes — commit or stash, then re-run"
 		return
 	fi
 
@@ -153,9 +159,9 @@ sync_one() {
 				on_main "$m" || git -C "$m" switch -q main 2>/dev/null || true
 				fix_upstream "$m" "$rem"
 			fi
-			warn "$m" "$n unpushed commit(s) — ./kallos push, then ./kallos pin"
+			r_skip "$m" "$n unpushed commit(s) — ./kallos push, then ./kallos pin"
 		else
-			err "$m" "diverged from $rem/main — resolve by hand"
+			r_fail "$m" "diverged from $rem/main — resolve by hand"
 		fi
 		return
 	fi
@@ -166,14 +172,14 @@ sync_one() {
 	#    `main` sits at the remote tip, so when the pin is OLDER than the tip
 	#    a fast-forward cannot reach it and only a reset will do.
 	if [ "${DRY:-0}" = 1 ]; then
-		act "$m" "would move ${dim}${head:0:8} -> ${target:0:8}${off}"
+		r_move "$m" "would move ${dim}${head:0:8} -> ${target:0:8}${off}"
 		return
 	fi
 	if ! git -C "$m" switch -q -C main "$target" 2>/dev/null; then
 		# The one expected failure: an untracked file in the way of a file the
 		# target commit adds. Report it rather than letting set -e kill the
 		# run halfway through the suite.
-		err "$m" "checkout blocked (untracked file in the way?)"
+		r_fail "$m" "checkout blocked (untracked file in the way?)"
 		return
 	fi
 	fix_upstream "$m" "$rem"
@@ -181,9 +187,9 @@ sync_one() {
 	# left it detached at the pin, and the only thing that changed is that it
 	# is now on a branch. Saying "da31c35 -> da31c35" would be noise.
 	if [ "$head" = "$target" ]; then
-		act "$m" "attached to main ${dim}${target:0:8}${off}"
+		r_move "$m" "attached to main ${dim}${target:0:8}${off}"
 	else
-		act "$m" "${dim}${head:0:8} -> ${target:0:8}${off}"
+		r_move "$m" "${dim}${head:0:8} -> ${target:0:8}${off}"
 	fi
 }
 
@@ -191,14 +197,14 @@ cmd_sync() {
 	local mode=pin
 	[ "${1-}" = --latest ] && mode=latest
 	# Not ${DRY:+...}: DRY=0 is set-and-non-empty, so that would always fire.
-	echo ">> syncing submodules ($mode$([ "${DRY:-0}" = 1 ] && echo ", dry run"))"
+	hdr "submodules — $mode$([ "${DRY:-0}" = 1 ] && echo " (dry run)")"
 	for m in "${mods[@]}"; do sync_one "$m" "$mode"; done
 	if [ "$mode" = latest ] && [ "${DRY:-0}" != 1 ]; then
-		echo ">> pins are now stale by construction; review and record them:"
-		echo "   git submodule summary"
-		echo "   ./kallos pin -m 'bump submodules'"
+		act "pins are now stale by construction; review and record them:"
+		note "git submodule summary"
+		note "./kallos pin -m 'bump submodules'"
 	fi
-	[ "$bad" -eq 0 ] || echo ">> $bad submodule(s) need attention"
+	[ "$bad" -eq 0 ] || act "$bad submodule(s) need attention"
 	return $((bad > 0))
 }
 
@@ -244,22 +250,22 @@ cmd_pin() {
 		[ -e "$m/.git" ] || continue
 		if rem=$(remote_of "$m"); then
 			if ! git -C "$m" merge-base --is-ancestor HEAD "$rem/main" 2>/dev/null; then
-				err "$m" "HEAD is not on $rem/main — ./kallos push first"
+				r_fail "$m" "HEAD is not on $rem/main — ./kallos push first"
 				continue
 			fi
 		fi
 		git add -- "$m"
 		staged=$((staged + 1))
 	done
-	[ "$bad" -eq 0 ] || { echo ">> nothing pinned"; return 1; }
-	echo ">> staged $staged gitlink(s)"
+	[ "$bad" -eq 0 ] || { act "nothing pinned"; return 1; }
+	act "staged $staged gitlink(s)"
 	git -c color.ui=always diff --cached --submodule=log -- "${mods[@]}" 2>/dev/null |
 		head -40 || true
 	if [ -n "$msg" ]; then
 		git commit -q -m "$msg"
-		echo ">> committed: $msg"
+		act "committed: $msg"
 	else
-		echo ">> staged only; commit when you're happy with the summary above"
+		act "staged only; commit when you're happy with the summary above"
 	fi
 	return 0
 }
@@ -269,18 +275,18 @@ cmd_push() {
 	local m rem n
 	for m in "${mods[@]}"; do
 		[ -e "$m/.git" ] || continue
-		rem=$(remote_of "$m") || { err "$m" "no remote"; continue; }
+		rem=$(remote_of "$m") || { r_fail "$m" "no remote"; continue; }
 		n=$(unique_of "$m" "$rem")
-		[ "$n" -gt 0 ] || { ok "$m" "${dim}nothing to push${off}"; continue; }
-		on_main "$m" || { warn "$m" "$n local commit(s) but HEAD is detached"; continue; }
+		[ "$n" -gt 0 ] || { r_ok "$m" "${dim}nothing to push${off}"; continue; }
+		on_main "$m" || { r_skip "$m" "$n local commit(s) but HEAD is detached"; continue; }
 		if git -C "$m" push -q "$rem" main; then
-			act "$m" "pushed $n commit(s)"
+			r_move "$m" "pushed $n commit(s)"
 		else
-			err "$m" "push failed"
+			r_fail "$m" "push failed"
 		fi
 	done
-	[ "$bad" -eq 0 ] || { echo ">> fix the above before pinning"; return 1; }
-	echo ">> all submodules published"
+	[ "$bad" -eq 0 ] || { act "fix the above before pinning"; return 1; }
+	act "all submodules published"
 }
 
 case "${1-}" in
@@ -288,5 +294,5 @@ case "${1-}" in
 	status) shift; cmd_status "$@" ;;
 	pin)    shift; cmd_pin "$@" ;;
 	push)   shift; cmd_push "$@" ;;
-	*) echo "!! usage: scripts/sync.sh <sync|status|pin|push>" >&2; exit 2 ;;
+	*) err "usage: scripts/sync.sh <sync|status|pin|push>"; exit 2 ;;
 esac
