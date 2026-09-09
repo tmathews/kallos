@@ -224,16 +224,16 @@ else
 	else
 		export WAYLAND_DISPLAY XDG_RUNTIME_DIR
 		WAYLAND_DISPLAY=$(sed -n 's/.*WAYLAND_DISPLAY=\([a-z0-9-]*\).*/\1/p' "$log" | head -1)
-		XDG_RUNTIME_DIR="$V/rt-r"
+		XDG_RUNTIME_DIR="$V/rt"
 		if "$HCC" "$V/hotcorner-marker" > "$V/hotcorner.txt" 2>&1; then
-			ok "hot corners: a cross-monitor sweep never fires, a flick does"
+			yes "hot corners: a cross-monitor sweep never fires, a flick does"
 		else
 			no "hot-corner gate failed"
 			sed 's/^/       /' "$V/hotcorner.txt"
 		fi
 		rm -f "$V/hotcorner-marker"
 		unset WAYLAND_DISPLAY
-		XDG_RUNTIME_DIR="$V/rt-r"
+		XDG_RUNTIME_DIR="$V/rt"
 	fi
 
 	# ---- the display domain -----------------------------------------------

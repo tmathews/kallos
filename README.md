@@ -17,25 +17,33 @@ packaged on Arch), checks out every submodule at its recorded commit, builds
 everything, and installs it to `/usr/local`. Run it again a week later and it
 updates instead — there is no separate init, because `up` is idempotent.
 
-Then either enable the login screen and reboot:
+On its way past, `up` asks about the login screen — greetd's config is Arch's
+agreety one until something replaces it, and the unit ships disabled — and
+about getting this machine's GPU into the initramfs, which is what lets
+phylax's greetd drop-in start the greeter without waiting on udev. Both are
+offered, never assumed; answering `n` leaves the machine exactly as it was,
+and `--no-session` skips the asking altogether. The same two checks on their
+own, whenever you want them:
 
 ```sh
-sudo install -m644 phylax/data/greetd/config.toml /etc/greetd/config.toml   # the package's own config picks agreety
-sudo systemctl enable greetd     # phylax greets on tty1 from the next boot
+./kallos session         # check both, offer to fix each
+./kallos doctor          # ...and every other preflight, reporting only
 ```
 
-and optionally take the boot itself — kernel flags, the GPU into the
-initramfs, the loader timeout — so the machine goes from the firmware logo
-straight to the login screen with no console in between:
+Then reboot into it. Optionally take the rest of the boot too — kernel flags,
+the loader timeout — so the machine goes from the firmware logo straight to
+the login screen with no console in between:
 
 ```sh
 ./kallos boot          # report what would change; writes nothing
 ./kallos boot apply    # ...and `./kallos boot revert` puts it all back
 ```
 
-That one is opt-in and never part of `up`: it edits `/etc` and `/boot` and
-takes effect at the next reboot. `phylax/docs/boot.md` has the measurements
-behind each flag.
+That one stays opt-in and out of `up`: it edits `/etc` and `/boot`, and after
+it VT1 has no text console at all (the rescue console becomes Ctrl+Alt+F2).
+The GPU half of it is the exception — `./kallos boot initramfs` is just that
+piece, and it is what `up` offers above. `phylax/docs/boot.md` has the
+measurements behind each flag.
 
 On a fresh Arch install, take the network too — `iwd` only associates, so
 without this there is no DHCP lease, and `/etc/resolv.conf` stays the real file
@@ -50,15 +58,24 @@ makes a captive-portal login hang for minutes instead of loading:
 Also opt-in, for the same reason. `./kallos doctor` says when a machine needs
 it.
 
-or start a session from a TTY by hand:
+Or skip the login screen entirely and start a session from a TTY by hand:
 
 ```sh
 ./test.sh
 ```
 
-Arch only, for now: `scripts/deps.sh` speaks pacman. On anything else, pass
-`--no-deps` and install the equivalents by hand — the lists, grouped by which
-component needs them, are at the top of that file.
+Arch is the paved road, not a requirement. `scripts/deps.sh` speaks pacman and
+its package names are Arch's, so on anything else it reports what Kallos needs
+and hands over rather than exiting — install the equivalents, then run with
+`--no-deps`. The lists, grouped by which component needs them, are at the top of
+that file, and the build itself is the real check: pkg-config names whatever is
+still missing far more precisely than a list can.
+
+Nothing else assumes a distro. The scripts detect what they are running on and
+adapt — which init is PID 1, whether the seat comes from **seatd** or **logind**
+(libseat picks at runtime, and `scripts/lib/detect.sh` asks the same questions in
+the same order), which initramfs generator is installed — and say which way it
+went. A machine that answers differently gets different advice, not a refusal.
 
 ## Layout
 
@@ -75,9 +92,8 @@ binaries declare `kallos = { path = "../kallos-lib" }`.
 | `kallos-lib/` | the `kallos` crate the Rust binaries share |
 | `yggdrasil/` `torrential/` `renzoku/` | apps — opt-in, `--apps` |
 
-`kstart/` (frozen C legacy, the parity oracle for `scripts/verify.sh`) and
-`kbrowser/` are **not** submodules. Clone them alongside if you want them; the
-root ignores both.
+`kbrowser/` is **not** a submodule — it has no remote yet. Clone it alongside
+if you want it; the root ignores it.
 
 ## Working across machines
 
@@ -101,19 +117,20 @@ on a detached HEAD, so you can just start editing in one and commit normally.
 ## Commands
 
 ```
-./kallos [up]         deps -> sync -> build -> install -> verify
+./kallos [up]         deps -> sync -> build -> install -> session -> verify
 ./kallos status       where every submodule is
 ./kallos sync         move submodules to the recorded pins
 ./kallos pin [-m MSG] record where they are now
 ./kallos push         publish every submodule
 ./kallos deps         packages and muon, nothing else
+./kallos session      the login screen and the boot-time GPU; asks before each
 ./kallos doctor       preflight — reports, writes nothing
 ./kallos build|install|verify
 ```
 
 Useful flags: `--latest`, `--pin`, `--pull`, `--apps`, `--debug`/`--release`,
-`--prefix=P`, `--no-deps`, `--no-install`, `--no-verify`, `-n`. `./kallos --help`
-has the rest.
+`--prefix=P`, `--no-deps`, `--no-install`, `--no-session`, `--no-verify`, `-n`.
+`./kallos --help` has the rest.
 
 A user prefix needs no sudo:
 
@@ -128,13 +145,16 @@ independently runnable, and running them directly is the normal way to iterate.
 
 | | |
 |---|---|
-| `scripts/deps.sh` | the Arch package list, muon, and the session checklist |
+| `scripts/deps.sh` | the Arch package list, muon, and the group/seat checklist |
 | `scripts/sync.sh` | the submodule engine behind `sync`/`status`/`pin`/`push` |
 | `scripts/build.sh` | the compositor through kosmos's own muon build, then cargo |
 | `scripts/install.sh` | copies into `$PREFIX`; never builds |
-| `scripts/verify.sh` | 22 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
-| `scripts/boot.sh` | opt-in: kernel flags, the GPU into the initramfs, loader timeout |
+| `scripts/session.sh` | the login screen and the boot GPU — checks, then asks |
+| `scripts/boot.sh` | opt-in: kernel flags, the GPU into the initramfs, loader timeout; `initramfs` alone |
 | `scripts/net.sh` | opt-in: networkd/resolved/iwd, DHCP, and the resolv.conf stub symlink |
+| `scripts/verify.sh` | 24 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
+| `scripts/lib/out.sh` | the shared output vocabulary — headers, labels, colour |
+| `scripts/lib/detect.sh` | what this machine is: init, seat backend, packaging, initramfs |
 | `test.sh` | build, install, and run a session on the primary TTY |
 
 The build always runs unprivileged and the install only copies, so cargo never
