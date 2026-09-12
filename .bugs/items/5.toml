@@ -1,0 +1,49 @@
+id = 5
+kind = "todo"
+title = "verify.sh's last check still asserts that a compositor death ends the session"
+description = """
+scripts/verify.sh ends with:
+
+    kill -TERM $(pgrep -x kosmos)
+    ...
+    yes "compositor death ended the session and reaped the overlay"
+    no  "children survived the compositor"
+
+That contract is gone. kallosd now respawns the compositor instead of taking
+the session down with it — the crash-recovery work from #4:
+
+    WARN [kallosd] compositor exited after 1.070626752s; respawning (1/3)
+
+So the check fails on every run, and it fails for the right reason: the
+behaviour it asserts was deliberately replaced. 19 passed, 1 failed, 1 skipped
+as of b326964e/3e8590c7.
+
+Not a regression from the output-vocabulary rename. The only edit that commit
+made to this block was ok -> yes; the check and the binaries are both from
+before it, and the same failure is reachable on the pin that preceded it.
+
+Two false leads worth writing down so nobody re-walks them:
+
+  * The ~9.8s between the kill and "[kallosd] shutting down" in the log is NOT
+    a teardown delay. It is verify.sh's own 10-iteration wait expiring, the
+    check failing, and the EXIT trap doing the killing. Widening that loop
+    fixes nothing.
+  * The compositor does die. Its PID changes — kallosd starts a new one, which
+    is why pgrep still finds "kosmos" a second later.
+
+What it should assert instead is the open question:
+
+  * that the compositor IS respawned, and the overlay survives with it (the
+    new contract stated positively); or
+  * that exhausting the budget ends the session — kill it four times, and
+    expect kallosd and hajime gone after the third respawn; or
+  * both, as two checks, which is probably right: recovery works, and recovery
+    gives up.
+
+The budget is 3 (\"respawning (1/3)\"), so the second one needs the kill loop to
+outlast it and needs to know what kallosd does on the fourth death.
+"""
+author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
+state = "open"
+created_at = "2026-09-09T04:27:21.795195955Z"
+updated_at = "2026-09-09T04:27:21.795195955Z"

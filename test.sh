@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Build + install + run a primary-TTY Kallos session with verbose kosmos logging.
-# This is THE session script: the whole suite, rooted at the Rust daemon
-# (kallosd --wm --overlay). kstart/test.sh is the rollback twin that brings the
-# session up on the C kdaemon instead.
+# This is THE session script: the whole suite, rooted at kallosd
+# (kallosd --wm --overlay).
 #
 # Plane offload (the underlay) is ON by default — no env needed; KWM_PLANES=0
 # is the kill switch if the plane stack is ever suspect.
@@ -14,10 +13,9 @@ cd "$(dirname "$0")"
 MODE="${1:-debug}"
 PREFIX="${PREFIX:-/usr/local}"
 
-# build.sh builds all four binaries — the three cargo crates plus kosmos through
-# its own muon tree in ./kosmos — so the session always runs the current tree. It
-# runs unprivileged; only the install needs sudo. Nothing here reads ./kstart:
-# that tree is the parity oracle for scripts/verify.sh, not part of a session.
+# build.sh builds the whole suite — the cargo crates plus kosmos through its own
+# muon tree in ./kosmos — so the session always runs the current tree. It runs
+# unprivileged; only the install needs sudo.
 scripts/build.sh "$MODE"
 sudo scripts/install.sh "$MODE"
 
@@ -35,7 +33,7 @@ KWM_PLANES_DUMP=1 \
 #   grep -E "ENGAGED|flip-only|not scannable|commit failed" /tmp/test.log
 #   coredumpctl list kosmos        # should show NO new crash
 # Note kosmos's SIGTERM teardown still aborts on a wlroots wlr_session_lock_v1
-# assertion — a known pre-existing bug, not a regression from the cutover.
+# assertion — a known bug, tracked separately.
 #
 # hajime's own output is detached to /dev/null by the daemon spawn; its crash
 # handler writes a backtrace to stderr, so run it by hand under the session if
@@ -45,6 +43,6 @@ KWM_PLANES_DUMP=1 \
 # it, pass the command explicitly:
 #   kallosd --wm ... --overlay "$PWD/hajime/target/debug/hajime"
 #
-# To check the daemon rather than the session — parity against the C kdaemon, a
-# headless session, the startup/supervision invariants — use
+# To check the daemon rather than the session — a headless session, the
+# startup/supervision invariants, the locker and the display domain — use
 # scripts/verify.sh, which needs neither sudo nor the TTY.

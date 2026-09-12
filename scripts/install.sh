@@ -1,19 +1,12 @@
 #!/usr/bin/env bash
-# Install Kallos — the five binaries plus the two data files that are still
-# live. Nothing else.
+# Install Kallos — the five binaries plus the data files that are still live.
+# Nothing else.
 #
-# This is the Rust cutover: the session runs `kallosd` and the Rust
-# `kallosctl`. The C `kdaemon` and the C `kallosctl` are NOT installed, and
-# both binaries being called `kallosctl` is exactly why — they collide in
-# $PREFIX/bin. They keep building in kstart/ for side-by-side comparison; see
-# scripts/verify.sh.
-#
-# What is deliberately NOT installed any more, vs kstart/scripts/install.sh:
-#   share/kallos/data/  — the deleted C overlay's asset tree (SVG icons, sfx/).
-#     hajime bakes its own assets in, and nothing in any tree resolves a path
-#     under share/kallos any more (grep says so). Only the portal and systemd
-#     files survived; they live in kallosd/data/ now, since they are kallosd's
-#     contract, and are installed below.
+# There is no asset tree under share/kallos: hajime and the apps bake their
+# icons, fonts and shaders in with include_bytes!, and nothing in any tree
+# resolves a path under share/kallos. The portal and systemd files are the only
+# data that survives, and they live in kallosd/data/ because they are kallosd's
+# contract; phylax's greetd and PAM files are the same story for the greeter.
 #
 # This script only COPIES. Everything it installs is built by
 # scripts/build.sh beforehand — deliberately, so cargo never runs under the
@@ -33,6 +26,8 @@ prefix="${PREFIX:-/usr/local}"
 destdir="${DESTDIR:-}"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+. "$root/scripts/lib/out.sh"
+. "$root/scripts/lib/detect.sh"
 kosmos_src="${KWM_SRC:-$root/kosmos}"
 kosmos_bin="$kosmos_src/builds/$cfg/src/kosmos"
 
@@ -48,16 +43,16 @@ crates=(kallosd kallosctl hajime phylax)
 # Pre-flight: everything must already be built.
 missing=0
 for c in "${crates[@]}"; do
-	[ -x "$root/$c/target/$cfg/$c" ] || { echo "!! missing $root/$c/target/$cfg/$c" >&2; missing=1; }
+	[ -x "$root/$c/target/$cfg/$c" ] || { err "missing $root/$c/target/$cfg/$c"; missing=1; }
 done
-[ -x "$kosmos_bin" ] || { echo "!! missing $kosmos_bin (the compositor)" >&2; missing=1; }
-[ "$missing" -eq 0 ] || { echo "!! build first: scripts/build.sh $cfg" >&2; exit 1; }
+[ -x "$kosmos_bin" ] || { err "missing $kosmos_bin (the compositor)"; missing=1; }
+[ "$missing" -eq 0 ] || die "build first: scripts/build.sh $cfg"
 
 bindir="$destdir$prefix/bin"
 portaldir="$destdir$prefix/share/xdg-desktop-portal"
 systemduserdir="$destdir$prefix/share/systemd/user"
 
-echo ">> installing Kallos ($cfg) -> ${destdir:+$destdir:}$prefix"
+hdr "install — $cfg -> ${destdir:+$destdir (staged) }$prefix"
 
 # Binaries -> bin/. No rpath fixup: kosmos static-links its private deps and the
 # Rust binaries link only system shared libs, all on the default loader path.
@@ -66,10 +61,10 @@ echo ">> installing Kallos ($cfg) -> ${destdir:+$destdir:}$prefix"
 # needs no paths.
 install -d "$bindir"
 install -m755 "$kosmos_bin" "$bindir/kosmos"
-echo "   bin/kosmos"
+ok "bin/kosmos"
 for c in "${crates[@]}"; do
 	install -m755 "$root/$c/target/$cfg/$c" "$bindir/$c"
-	echo "   bin/$c"
+	ok "bin/$c"
 done
 
 # xdg-desktop-portal integration for kallosd's Settings backend. The
@@ -78,7 +73,7 @@ done
 install -d "$portaldir/portals"
 install -m644 "$root/kallosd/data/portal/kallos.portal" "$portaldir/portals/kallos.portal"
 install -m644 "$root/kallosd/data/portal/kallos-portals.conf" "$portaldir/kallos-portals.conf"
-echo "   share/xdg-desktop-portal/"
+ok "share/xdg-desktop-portal/"
 
 # systemd user unit: the session target kallosd starts once the compositor
 # registers (activating graphical-session.target, so xdg-desktop-portal can
@@ -87,21 +82,7 @@ echo "   share/xdg-desktop-portal/"
 # installed unit; a fresh login picks it up automatically.
 install -d "$systemduserdir"
 install -m644 "$root/kallosd/data/systemd/kallos-session.target" "$systemduserdir/kallos-session.target"
-echo "   share/systemd/user/kallos-session.target"
-
-# The cutover leaves the pre-Rust binaries behind, and a stale `kdaemon` on
-# PATH is the one thing that can quietly re-run the old session. Point at them
-# rather than deleting: what to remove is the user's call.
-stale=()
-for old in kdaemon kstart; do
-	[ -e "$bindir/$old" ] && stale+=("$old")
-done
-if [ ${#stale[@]} -gt 0 ]; then
-	echo ">> note: pre-cutover binaries still in $prefix/bin: ${stale[*]}"
-	echo "   they are no longer installed by this script; remove when you're done with them."
-fi
-
-echo ">> done — ensure $prefix/bin is on PATH"
+ok "share/systemd/user/kallos-session.target"
 
 # PAM service for `phylax --lock`. Under /etc, never $prefix: PAM reads only
 # /etc/pam.d, so a user-prefix install cannot place it and says so — the
@@ -110,54 +91,75 @@ pamdir="$destdir/etc/pam.d"
 if [ -d "$pamdir" ] && [ -w "$pamdir" ] || [ -n "$destdir" ]; then
 	install -d "$pamdir"
 	install -m644 "$root/phylax/data/pam/phylax" "$pamdir/phylax"
-	echo "   /etc/pam.d/phylax"
+	ok "/etc/pam.d/phylax"
 	# greetd's greeter-session service, which Arch's package does not ship.
 	install -m644 "$root/phylax/data/pam/greetd-greeter" "$pamdir/greetd-greeter"
-	echo "   /etc/pam.d/greetd-greeter"
+	ok "/etc/pam.d/greetd-greeter"
 else
-	echo "   !! /etc/pam.d/phylax not installed (no write access) — phylax --lock needs it:"
-	echo "      sudo install -m644 $root/phylax/data/pam/phylax /etc/pam.d/phylax"
+	warn "/etc/pam.d/phylax not installed (no write access) — phylax --lock needs it"
+	note "sudo install -m644 $root/phylax/data/pam/phylax /etc/pam.d/phylax"
 fi
 
 # The login screen under greetd: the greeter session script beside the
 # binaries (greetd's PATH finds it), and a config.toml only if greetd has
 # none yet — once it exists it is the admin's. Nothing is enabled here:
 # `systemctl enable greetd` takes the VT from getty and needs a re-login,
-# which is scripts/deps.sh's checklist business, never an installer's.
+# which is scripts/session.sh's business, never an installer's. That script
+# asks about both — the config and the enable — right after this one runs.
 install -m755 "$root/phylax/data/greetd/phylax-greeter" "$bindir/phylax-greeter"
-echo "   bin/phylax-greeter"
+ok "bin/phylax-greeter"
 # greetd's unit: a restart budget that outlasts a slow GPU probe, and no
 # ordering guess. It assumes the machine's KMS driver is in the initramfs —
 # see the drop-in's comment, which is the other half of that change.
+# A systemd drop-in, so it goes in only where systemd is running — on a runit
+# or OpenRC machine it is an inert file in a directory nothing reads. A staged
+# install (DESTDIR) always gets it: the machine being packaged FOR is not this
+# one, and leaving it out would ship an incomplete package.
 greetd_dropin="$destdir/etc/systemd/system/greetd.service.d"
-if [ -d "$destdir/etc/systemd/system" ] && [ -w "$destdir/etc/systemd/system" ] || [ -n "$destdir" ]; then
+if [ -n "$destdir" ] || { have_systemd && [ -w /etc/systemd/system ]; }; then
 	install -d "$greetd_dropin"
 	install -m644 "$root/phylax/data/systemd/greetd-kallos.conf" "$greetd_dropin/kallos.conf"
-	echo "   /etc/systemd/system/greetd.service.d/kallos.conf  (systemctl daemon-reload to apply)"
+	ok "/etc/systemd/system/greetd.service.d/kallos.conf"
+	[ -n "$destdir" ] || note "systemctl daemon-reload to apply"
+elif ! have_systemd; then
+	skip "greetd systemd drop-in — this machine runs $(init_system)"
+	note "it only sets greetd's restart budget and its ordering after seatd"
 fi
 # logind: end the session's processes with the session, so a compositor crash
 # does not leave survivors holding the logind session open and the next login
 # inheriting the dead session's user manager. See the drop-in's comment; the
 # other half of that fix is kallosd's session activation.
+# Same rule as the greetd drop-in above: it configures logind, so it goes in
+# where logind is what is running. A staged install always gets it.
 logind_dropin="$destdir/etc/systemd/logind.conf.d"
-if [ -d "$destdir/etc/systemd" ] && [ -w "$destdir/etc/systemd" ] || [ -n "$destdir" ]; then
+if [ -n "$destdir" ] || { have_systemd && [ -w /etc/systemd ]; }; then
 	install -d "$logind_dropin"
 	install -m644 "$root/kallosd/data/systemd/logind-kallos.conf" "$logind_dropin/kallos.conf"
-	echo "   /etc/systemd/logind.conf.d/kallos.conf  (systemctl restart systemd-logind to apply)"
+	ok "/etc/systemd/logind.conf.d/kallos.conf"
+	[ -n "$destdir" ] || note "systemctl restart systemd-logind to apply"
+elif ! have_systemd; then
+	skip "logind drop-in — this machine runs $(init_system)"
+	note "it ends the session's processes with the session; find your init's equivalent"
 else
-	echo "   !! /etc/systemd/logind.conf.d/kallos.conf not installed (no write access)"
-	echo "      sudo install -Dm644 $root/kallosd/data/systemd/logind-kallos.conf /etc/systemd/logind.conf.d/kallos.conf"
+	warn "/etc/systemd/logind.conf.d/kallos.conf not installed (no write access)"
+	note "sudo install -Dm644 $root/kallosd/data/systemd/logind-kallos.conf /etc/systemd/logind.conf.d/kallos.conf"
 fi
 greetd_conf="$destdir/etc/greetd/config.toml"
 if [ -e "$greetd_conf" ]; then
 	# Arch's greetd package ships one (agreety, the text greeter), so on a
-	# fresh install this is the line you will see — and the one to act on.
-	echo "   /etc/greetd/config.toml exists — left alone; to use the phylax login screen:"
-	echo "      sudo install -m644 $root/phylax/data/greetd/config.toml /etc/greetd/config.toml"
+	# fresh install this is the line you will see. Overwriting it is a
+	# question, not an install step — scripts/session.sh is where it gets
+	# asked, and it backs the existing file up before answering yes.
+	skip "/etc/greetd/config.toml exists — left alone (it is the admin's file)"
+	if ! cmp -s "$root/phylax/data/greetd/config.toml" "$greetd_conf"; then
+		note "it is not phylax's; './kallos session' offers to replace it"
+	fi
 elif [ -d "$destdir/etc/greetd" ] && [ -w "$destdir/etc/greetd" ] || [ -n "$destdir" ]; then
 	install -d "$destdir/etc/greetd"
 	install -m644 "$root/phylax/data/greetd/config.toml" "$greetd_conf"
-	echo "   /etc/greetd/config.toml"
+	ok "/etc/greetd/config.toml"
 else
-	echo "   !! /etc/greetd/config.toml not installed (greetd not installed, or no write access)"
+	warn "/etc/greetd/config.toml not installed (greetd absent, or no write access)"
 fi
+
+act "done — ensure $prefix/bin is on PATH"

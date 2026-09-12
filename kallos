@@ -14,21 +14,25 @@
 # phases, and the three guards below; it owns no build knowledge. The real work
 # lives in scripts/, which stays independently runnable:
 #
+#   scripts/lib/out.sh     the shared output vocabulary
+#   scripts/lib/detect.sh  what this machine is: init, seat backend, packaging
 #   scripts/deps.sh     packages + muon                (this repo)
 #   scripts/sync.sh     the submodule engine           (this repo)
 #   scripts/build.sh    kosmos via muon, then cargo       (predates this file)
 #   scripts/install.sh  copy into $PREFIX              (predates this file)
-#   scripts/verify.sh   13 checks, no sudo, no TTY     (predates this file)
+#   scripts/session.sh  the login screen + boot GPU    (this repo)
+#   scripts/verify.sh   23 checks, no sudo, no TTY     (predates this file)
 #
 # Usage: ./kallos [subcommand] [flags]     (default subcommand: up)
 set -euo pipefail
 cd "$(dirname "$0")"
 root="$PWD"
+. "$root/scripts/lib/out.sh"
 
 CFG=release
 APPS=0
 DRY=0
-do_deps=1 do_install=1 do_verify=1 do_pull=0 latest=0 do_pin=0
+do_deps=1 do_install=1 do_session=1 do_verify=1 do_pull=0 latest=0 do_pin=0
 PREFIX="${PREFIX:-/usr/local}"
 
 usage() {
@@ -36,12 +40,15 @@ usage() {
 	cat <<'EOF'
 
 Subcommands
-  up            deps -> sync -> build -> install -> verify        [default]
+  up            deps -> sync -> build -> install -> session -> verify  [default]
   status        where every submodule is: branch, dirty, ahead/behind, pin
   sync          move the submodules to the recorded pins
   pin [-m MSG]  record where the submodules are now
   push          publish every submodule, so the pins are clonable
   deps          system packages and muon, nothing else
+  session       the login screen (greetd + phylax) and the boot-time GPU it
+                depends on. Checks both and OFFERS to fix each; nothing
+                happens without a `y`, and declining is always an option
   boot [MODE]   the boot configuration: kernel flags, initramfs, loader
                 timeout. check (default) | apply | revert. Opt-in and never
                 part of `up` — it edits /etc and /boot and needs a reboot
@@ -60,7 +67,7 @@ Flags
   --debug       build the debug config (default: release)
   --release     build the release config
   --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo)
-  --no-deps --no-install --no-verify
+  --no-deps --no-install --no-session --no-verify
   -n, --dry-run report what sync would do; touch nothing
 EOF
 }
@@ -72,18 +79,16 @@ EOF
 # unprivileged build fails on them. scripts/build.sh's header says the same;
 # this makes it impossible rather than documented.
 [ "${EUID:-$(id -u)}" -ne 0 ] || {
-	echo "!! don't run this under sudo — cargo would leave root-owned target/ dirs" >&2
-	echo "   run it as yourself; the install step asks for sudo on its own." >&2
-	exit 1
+	err "don't run this under sudo — cargo would leave root-owned target/ dirs"
+	die "run it as yourself; the install step asks for sudo on its own."
 }
 
 # scripts/install.sh looks for each binary at $root/<crate>/target/$cfg/<crate>.
 # A CARGO_TARGET_DIR in the environment moves them somewhere else and the
 # install fails a preflight that reads like a build failure.
 [ -z "${CARGO_TARGET_DIR:-}" ] || {
-	echo "!! CARGO_TARGET_DIR is set ($CARGO_TARGET_DIR)" >&2
-	echo "   scripts/install.sh expects binaries under each crate's own target/." >&2
-	exit 1
+	err "CARGO_TARGET_DIR is set ($CARGO_TARGET_DIR)"
+	die "scripts/install.sh expects binaries under each crate's own target/."
 }
 
 # ---- args -----------------------------------------------------------------
@@ -100,12 +105,13 @@ while [ $# -gt 0 ]; do
 		--prefix=*)  PREFIX="${1#--prefix=}" ;;
 		--no-deps)   do_deps=0 ;;
 		--no-install) do_install=0 ;;
+		--no-session) do_session=0 ;;
 		--no-verify) do_verify=0 ;;
 		-n|--dry-run) DRY=1 ;;
 		-h|--help)   usage; exit 0 ;;
 		-m)          args+=(-m "${2-}"); shift ;;   # `pin -m MSG`
 		debug|release) CFG="$1" ;;
-		-*) echo "!! unknown flag: $1 (try --help)" >&2; exit 2 ;;
+		-*) err "unknown flag: $1 (try --help)"; exit 2 ;;
 		*)  if [ -z "$sub" ]; then sub="$1"; else args+=("$1"); fi ;;
 	esac
 	shift
@@ -113,18 +119,16 @@ done
 sub="${sub:-up}"
 export APPS DRY PREFIX
 
-step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
-
 # ---- phases ---------------------------------------------------------------
 
 phase_deps() {
 	[ "$do_deps" = 1 ] || return 0
-	step "dependencies"
+	# Each script prints its own header — they stay independently runnable, so
+	# the announcement belongs with the work, not with the dispatcher.
 	APPS="$APPS" "$root/scripts/deps.sh" install
 }
 
 phase_sync() {
-	step "submodules"
 	# --pull is a no-op until the superproject has a commit and a remote, which
 	# is the state during the migration and on any tree that was never pushed.
 	if [ "$do_pull" = 1 ] &&
@@ -143,7 +147,6 @@ phase_sync() {
 }
 
 phase_build() {
-	step "build ($CFG${APPS:+, with apps})"
 	# The config is passed EXPLICITLY to both halves and always will be:
 	# scripts/build.sh defaults to debug and scripts/install.sh defaults to
 	# release, so the bare pair builds one thing and installs another.
@@ -152,7 +155,6 @@ phase_build() {
 
 phase_install() {
 	[ "$do_install" = 1 ] || return 0
-	step "install -> ${DESTDIR:+$DESTDIR (staged) }$PREFIX"
 	# A system prefix needs root; a user prefix (or a DESTDIR stage) does not.
 	# Only the copy runs privileged — never the build above it.
 	if [ -w "$PREFIX" ] || [ -n "${DESTDIR:-}" ]; then
@@ -162,6 +164,26 @@ phase_install() {
 	fi
 }
 
+# The login screen and the boot-time GPU. After install, deliberately: the
+# greetd config it offers names `phylax-greeter`, which the install is what
+# puts on PATH — offering to arm a login screen whose greeter does not exist
+# yet would move the failure to the next boot.
+#
+# Safe to have in `up` because it is a no-op once done: everything it touches
+# is checked first, and a machine that is already set up prints two OK lines
+# and asks nothing. A user prefix has no business editing /etc, so it is
+# skipped there rather than prompting for a sudo the rest of that run avoided.
+phase_session() {
+	[ "$do_session" = 1 ] || return 0
+	[ "$DRY" != 1 ] || return 0
+	if [ -n "${DESTDIR:-}" ] || [ "$PREFIX" != /usr/local ]; then
+		hdr "session"
+		skip "not a system prefix — /etc is left alone"
+		return 0
+	fi
+	PREFIX="$PREFIX" "$root/scripts/session.sh" apply
+}
+
 verify_failed=0
 phase_verify() {
 	[ "$do_verify" = 1 ] || return 0
@@ -169,10 +191,11 @@ phase_verify() {
 	# a live session — and being mid-session is the normal case for an update.
 	# Skip rather than fail; it stays available by hand.
 	if pgrep -x kosmos >/dev/null 2>&1; then
-		step "verify — skipped (a session is running; run scripts/verify.sh $CFG later)"
+		hdr "verify"
+		skip "a session is running — run scripts/verify.sh $CFG later"
 		return 0
 	fi
-	step "verify"
+	hdr "verify"
 	# Deliberately not fatal here. By this point the build and the install have
 	# already succeeded, and aborting would suggest they hadn't. The session
 	# checks are timing-sensitive on a cold cache — a first run on a new machine
@@ -182,21 +205,19 @@ phase_verify() {
 }
 
 cmd_doctor() {
-	step "doctor"
+	hdr "doctor"
 	local bad=0
 	for t in git cargo rustc clang pkg-config muon; do
 		if command -v "$t" >/dev/null; then
-			printf '  ok   %-10s %s\n' "$t" "$(command -v "$t")"
+			row_grn OK "$t" "$(command -v "$t")"
 		else
-			printf '  MISS %-10s\n' "$t"; bad=1
+			row_red MISS "$t" "not on PATH"; bad=1
 		fi
 	done
 	if [ -f .gitmodules ]; then
-		printf '  ok   %-10s %s registered\n' submodules \
-			"$(grep -c '^\[submodule' .gitmodules)"
+		row_grn OK submodules "$(grep -c '^\[submodule' .gitmodules) registered"
 	else
-		printf '  MISS %-10s this tree is not a superproject yet\n' submodules
-		bad=1
+		row_red MISS submodules "this tree is not a superproject yet"; bad=1
 	fi
 	# Probe the transport, not a particular repo: the superproject's own remote
 	# may legitimately not exist yet, and `ls-remote` on a missing repo fails
@@ -205,12 +226,13 @@ cmd_doctor() {
 	# exit inside the pipeline, or `set -o pipefail` reports it as a failure.
 	if { ssh -o BatchMode=yes -o ConnectTimeout=5 -T git@github.com 2>&1 || true; } |
 		grep -q 'successfully authenticated'; then
-		printf '  ok   %-10s ssh authenticates\n' github
+		row_grn OK github "ssh authenticates"
 	else
-		printf '  WARN %-10s git@github.com did not authenticate (ssh key? network?)\n' github
+		row_ylw WARN github "git@github.com did not authenticate (ssh key? network?)"
 	fi
-	echo
 	"$root/scripts/deps.sh" check
+	# Same two checks `up` offers to fix, in the mode that only ever reports.
+	PREFIX="$PREFIX" "$root/scripts/session.sh" check
 	return "$bad"
 }
 
@@ -221,13 +243,14 @@ case "$sub" in
 		phase_sync
 		phase_build
 		phase_install
+		phase_session
 		phase_verify
-		step "done"
-		echo "   ensure $PREFIX/bin is on PATH, then start a session with ./test.sh"
+		hdr "done"
+		note "ensure $PREFIX/bin is on PATH, then start a session with ./test.sh"
 		if [ "$verify_failed" = 1 ]; then
-			echo "   NOTE: built and installed, but verify reported failures above."
-			echo "   Re-run scripts/verify.sh $CFG — the session checks can lose a"
-			echo "   race on a cold cache and pass on a second run."
+			warn "built and installed, but verify reported failures above"
+			note "re-run scripts/verify.sh $CFG — the session checks can lose a"
+			note "race on a cold cache and pass on a second run."
 			exit 1
 		fi
 		;;
@@ -238,10 +261,11 @@ case "$sub" in
 	deps)    "$root/scripts/deps.sh" install ;;
 	boot)    "$root/scripts/boot.sh" "${args[@]+"${args[@]}"}" ;;
 	net)     "$root/scripts/net.sh" "${args[@]+"${args[@]}"}" ;;
+	session) PREFIX="$PREFIX" "$root/scripts/session.sh" "${args[@]+"${args[@]}"}" ;;
 	doctor)  cmd_doctor ;;
 	build)   phase_build ;;
 	install) phase_install ;;
 	verify)  "$root/scripts/verify.sh" "$CFG" ;;
 	help)    usage ;;
-	*) echo "!! unknown subcommand: $sub (try --help)" >&2; exit 2 ;;
+	*) err "unknown subcommand: $sub (try --help)"; exit 2 ;;
 esac
