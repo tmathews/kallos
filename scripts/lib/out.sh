@@ -41,7 +41,7 @@ else
 	_bld=''; _dim=''; _red=''; _grn=''; _ylw=''; _cyn=''; _off=''
 fi
 
-# stderr is gated on its own: `./kallos up 2>build.log` on a terminal would
+# stderr is gated on its own: `./dev install 2>build.log` on a terminal would
 # otherwise write escapes into the log while the screen stayed clean.
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
 	_ered=$'\033[31m'; _eoff=$'\033[0m'
@@ -49,7 +49,7 @@ else
 	_ered=''; _eoff=''
 fi
 
-# A phase: `./kallos up`'s steps, and the top of a script run by hand.
+# A phase: `./dev install`'s steps, and the top of a script run by hand.
 hdr() { printf '\n%s== %s%s\n' "$_bld" "$*" "$_off"; }
 
 # A section inside a phase. Indented under the header, not a header itself, so
@@ -72,7 +72,7 @@ fail() { _st "$_red" FAIL "$*"; }
 pend() { _st "$_ylw" WAIT "$*"; }
 
 # A status label plus a fixed-width name column, for the per-item tables
-# scripts/sync.sh prints (one row per submodule). Same label geometry as _st,
+# scripts/repo.sh prints (one row per submodule). Same label geometry as _st,
 # so a table and a plain list still line up when a script prints both.
 row() { printf '  %s%-4s%s  %-12s %s\n' "$1" "$2" "$_off" "$3" "${4-}"; }
 row_grn() { row "$_grn" "$@"; }

@@ -52,7 +52,7 @@ bindir="$destdir$prefix/bin"
 portaldir="$destdir$prefix/share/xdg-desktop-portal"
 systemduserdir="$destdir$prefix/share/systemd/user"
 
-hdr "install — $cfg -> ${destdir:+$destdir (staged) }$prefix"
+hdr "binaries — $cfg -> ${destdir:+$destdir (staged) }$prefix"
 
 # Binaries -> bin/. No rpath fixup: kosmos static-links its private deps and the
 # Rust binaries link only system shared libs, all on the default loader path.
@@ -152,7 +152,7 @@ if [ -e "$greetd_conf" ]; then
 	# asked, and it backs the existing file up before answering yes.
 	skip "/etc/greetd/config.toml exists — left alone (it is the admin's file)"
 	if ! cmp -s "$root/phylax/data/greetd/config.toml" "$greetd_conf"; then
-		note "it is not phylax's; './kallos session' offers to replace it"
+		note "it is not phylax's; './dev install' offers to replace it"
 	fi
 elif [ -d "$destdir/etc/greetd" ] && [ -w "$destdir/etc/greetd" ] || [ -n "$destdir" ]; then
 	install -d "$destdir/etc/greetd"

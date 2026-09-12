@@ -30,7 +30,7 @@
 #
 # Usage: scripts/session.sh [check|apply]   (default: apply)
 #   check   report only; never prompt, never write        (this is what
-#           `./kallos doctor` runs)
+#           `./dev install -n` runs)
 #   apply   report, then offer to fix what is outstanding
 #   YES=1   don't prompt; assume yes
 set -euo pipefail
@@ -61,19 +61,20 @@ etc_conf="${GREETD_CONF:-/etc/greetd/config.toml}"
 # label — bash would keep the two apart, but a reader would not.
 pending=()
 
-hdr "session"
+hdr "login screen"
 
-sec "login screen"
+sec "greetd"
 
 if ! command -v greetd >/dev/null; then
-	skip "greetd is not installed (scripts/deps.sh installs it)"
+	skip "greetd is not installed (the packages step installs it)"
 elif [ ! -x "${PREFIX:-/usr/local}/bin/phylax-greeter" ]; then
 	# Ordering guard, not a style check. The config below names
 	# `phylax-greeter`; enabling greetd before that binary exists arms a login
 	# screen that cannot start, and the failure lands at the next boot rather
-	# than here. In `./kallos up` this is always satisfied — install runs first.
+	# than here. In `./dev install` this is always satisfied — the binaries are
+	# copied in the step before this one.
 	skip "${PREFIX:-/usr/local}/bin/phylax-greeter is not installed yet"
-	note "run the install first: ./kallos install"
+	note "run the install first: ./dev install"
 else
 	if [ ! -e "$etc_conf" ]; then
 		todo "$etc_conf does not exist"

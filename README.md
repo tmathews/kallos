@@ -9,54 +9,56 @@ work together, and the scripts that turn that into an installed system.
 
 ```sh
 git clone --recursive git@github.com:tmathews/kallos.git
-cd kallos && ./kallos
+cd kallos && ./dev
 ```
 
-`./kallos` installs the system packages, builds muon from source (it isn't
-packaged on Arch), checks out every submodule at its recorded commit, builds
-everything, and installs it to `/usr/local`. Run it again a week later and it
-updates instead — there is no separate init, because `up` is idempotent.
+That is the whole of it. `./dev` is `./dev install`, and `install` means the
+machine, not a file copy — it works through eight steps — the tree first, then
+the machine — in the order they depend on each other:
 
-On its way past, `up` asks about the login screen — greetd's config is Arch's
-agreety one until something replaces it, and the unit ships disabled — and
-about getting this machine's GPU into the initramfs, which is what lets
-phylax's greetd drop-in start the greeter without waiting on udev. Both are
-offered, never assumed; answering `n` leaves the machine exactly as it was,
-and `--no-session` skips the asking altogether. The same two checks on their
-own, whenever you want them:
+| | |
+|---|---|
+| **submodules** | every component checked out at the commit this repo records |
+| **packages** | pacman's list, then muon built from source (it isn't packaged on Arch) |
+| **build** | the compositor through muon, then cargo for the rest |
+| **binaries** | copied into `/usr/local` |
+| **network** | networkd, resolved, iwd, DHCP, and the `resolv.conf` stub symlink |
+| **login screen** | greetd + phylax, and this machine's GPU into the initramfs |
+| **boot** | kernel flags and the loader timeout — firmware logo straight to the login screen, no console in between |
+| **verify** | 23 checks against a headless session |
+
+**Every step is checked first and only then offered.** A machine that is
+already set up prints OK lines and asks nothing, so the same command is the
+fresh-install command, the update command and the repair command — there is no
+way to tell which one you are running, and nothing is one-shot. Answering `n`
+to anything leaves that part exactly as it was and the run carries on; what you
+declined is listed at the end, and re-running offers it again.
+
+To see the whole report without changing anything:
 
 ```sh
-./kallos session         # check both, offer to fix each
-./kallos doctor          # ...and every other preflight, reporting only
+./dev install -n      # check everything, touch nothing
 ```
 
-Then reboot into it. Optionally take the rest of the boot too — kernel flags,
-the loader timeout — so the machine goes from the firmware logo straight to
-the login screen with no console in between:
+Two of the steps edit `/etc` and `/boot` and take effect at the next reboot, so
+they are worth knowing before you answer `y`. The **boot** step puts `quiet
+fbcon=vc:2-6` and friends on the kernel command line: after it VT1 has no text
+console at all, the rescue console is Ctrl+Alt+F2, and the fallback boot entry
+stays verbose as the way back in. `phylax/docs/boot.md` has the measurements
+behind each flag. The **network** step rewrites the resolver — Arch ships
+`/etc/resolv.conf` as a real file, which permanently defeats systemd's own
+tmpfiles rule and is why a captive-portal login hangs for minutes instead of
+loading.
+
+Both undo themselves, and `./dev` has no verb for it on purpose — reverting is
+rare, deliberate, and reads better spelled out:
 
 ```sh
-./kallos boot          # report what would change; writes nothing
-./kallos boot apply    # ...and `./kallos boot revert` puts it all back
+scripts/boot.sh revert
+scripts/net.sh revert
 ```
 
-That one stays opt-in and out of `up`: it edits `/etc` and `/boot`, and after
-it VT1 has no text console at all (the rescue console becomes Ctrl+Alt+F2).
-The GPU half of it is the exception — `./kallos boot initramfs` is just that
-piece, and it is what `up` offers above. `phylax/docs/boot.md` has the
-measurements behind each flag.
-
-On a fresh Arch install, take the network too — `iwd` only associates, so
-without this there is no DHCP lease, and `/etc/resolv.conf` stays the real file
-Arch ships rather than the symlink to systemd-resolved's stub, which is what
-makes a captive-portal login hang for minutes instead of loading:
-
-```sh
-./kallos net           # report what would change; writes nothing
-./kallos net apply     # ...and `./kallos net revert` puts it all back
-```
-
-Also opt-in, for the same reason. `./kallos doctor` says when a machine needs
-it.
+Then reboot into it.
 
 Or skip the login screen entirely and start a session from a TTY by hand:
 
@@ -97,66 +99,109 @@ if you want it; the root ignores it.
 
 ## Working across machines
 
-The superproject records an exact commit per submodule, so a fresh clone gets a
-combination that built. Day to day:
+Two verbs. Neither of them needs git, and neither needs you to think about
+pins.
 
 ```sh
-./kallos status          # branch, dirty, ahead/behind, pin drift — read this first
-./kallos push            # publish every submodule, so the pins are clonable
-./kallos pin -m "..."    # record where the submodules are now
-./kallos up --latest     # move them to their origin/main tips instead
+./dev pull     # everything to its latest main — submodules and this repo
+./dev push     # publish all the work, and record it here in one commit
+./dev status   # where everything is, and which of the two to run
 ```
 
-`sync` never touches a submodule with uncommitted changes or unpushed commits —
-it reports and skips. So on the machine you left work on, `./kallos` tells you
-what is unfinished rather than quietly discarding it.
+`pull` fetches, fast-forwards every submodule to its own `origin/main`, and
+brings this repo up to date with its own. Commits you made but never pushed get
+rebased onto the new tip and the line says so. A rebase that conflicts is
+aborted cleanly — the submodule is left exactly as it was found, with the one
+command to resolve it by hand.
+
+`push` goes the other way, in the order that makes the result clonable:
+every submodule's commits first, then one commit here recording the new pins.
+**You do not write that commit message.** It is assembled from the submodules'
+own logs, which already describe the work:
+
+```
+pin kosmos +4, phylax +1  (5 commits)
+
+kosmos  a1b2c3de..9f8e7d6c  4 commits
+    Fix damage tracking on rotated outputs
+    ...
+
+phylax  40affb1f..3dfd25ca  1 commit
+    Stop the delay inhibitor leaking on resume
+```
+
+One submodule with one commit gets that commit's subject as the subject line —
+`pin phylax +1` says strictly less than what it is pinning.
+
+Both verbs stop before touching anything if a submodule is **not on `main`**.
+This tree tracks main and only main, and guessing what to do with a branch
+somebody is in the middle of is how work gets lost. `push` also stops on
+**uncommitted changes**, anywhere — publishing a pin that silently excludes the
+edit you were in the middle of is the exact surprise this exists to prevent.
+`pull` reports them and carries on, because bringing in new code does not
+threaten them.
+
+When two machines have both pinned, the second one's `push` is rejected and
+says so; `pull` merges the two sets of pins — resolving any collision to the
+tips, which is what "work on latest main" means — and the next `push` lands.
 
 Submodules are always left on a real local `main` with upstream tracking, never
 on a detached HEAD, so you can just start editing in one and commit normally.
 
+### The pins, and when they matter
+
+`pull` and `push` always go to the tips, so most days the recorded pins are
+just a side effect. They exist for one thing: a fresh clone, and `./dev
+install`, build the exact combination this repo records — not whatever the tips happen to
+be that morning. `./dev sync` puts the submodules back on that combination,
+which is the command to reach for when a pull brought in something broken.
+
 ## Commands
 
+Four, and a fifth for when a pull goes wrong.
+
 ```
-./kallos [up]         deps -> sync -> build -> install -> session -> verify
-./kallos status       where every submodule is
-./kallos sync         move submodules to the recorded pins
-./kallos pin [-m MSG] record where they are now
-./kallos push         publish every submodule
-./kallos deps         packages and muon, nothing else
-./kallos session      the login screen and the boot-time GPU; asks before each
-./kallos doctor       preflight — reports, writes nothing
-./kallos build|install|verify
+./dev [install]     the whole machine: check every step, offer to fix it, build
+./dev pull          everything to its latest main
+./dev push          publish all work, pin it, commit it, push it
+./dev status        where everything is, and what to run next
+./dev sync          put the submodules back on the pins this repo records
 ```
 
-Useful flags: `--latest`, `--pin`, `--pull`, `--apps`, `--debug`/`--release`,
-`--prefix=P`, `--no-deps`, `--no-install`, `--no-session`, `--no-verify`, `-n`.
-`./kallos --help` has the rest.
+`deps`, `session`, `boot`, `net`, `build`, `verify` and `doctor` used to be
+commands here and are now steps inside `install` — `doctor` is `install -n`.
+Typing any of them still tells you where it went. To run one on its own, or to
+undo one, go straight to the script: they are all independently runnable and
+always will be.
+
+Useful flags: `-n`/`--dry-run`, `--yes`, `--apps`, `--debug`/`--release`,
+`--prefix=P`, `--no-deps`, `--no-verify`. `./dev --help` has the rest.
 
 A user prefix needs no sudo:
 
 ```sh
-./kallos --prefix="$HOME/.local"
+./dev --prefix="$HOME/.local"
 ```
 
 ## Scripts
 
-`./kallos` is a dispatcher and owns no build knowledge. Each script below stays
+`./dev` is a dispatcher and owns no build knowledge. Each script below stays
 independently runnable, and running them directly is the normal way to iterate.
 
 | | |
 |---|---|
 | `scripts/deps.sh` | the Arch package list, muon, and the group/seat checklist |
-| `scripts/sync.sh` | the submodule engine behind `sync`/`status`/`pin`/`push` |
+| `scripts/repo.sh` | the submodule engine behind `pull`/`push`/`status`/`sync` |
 | `scripts/build.sh` | the compositor through kosmos's own muon build, then cargo |
-| `scripts/install.sh` | copies into `$PREFIX`; never builds |
+| `scripts/install.sh` | copies the binaries into `$PREFIX`; never builds. The *binaries* step, not the `install` command |
 | `scripts/session.sh` | the login screen and the boot GPU — checks, then asks |
-| `scripts/boot.sh` | opt-in: kernel flags, the GPU into the initramfs, loader timeout; `initramfs` alone |
-| `scripts/net.sh` | opt-in: networkd/resolved/iwd, DHCP, and the resolv.conf stub symlink |
+| `scripts/boot.sh` | kernel flags, the GPU into the initramfs, loader timeout; `initramfs` alone, and `revert` |
+| `scripts/net.sh` | networkd/resolved/iwd, DHCP, and the resolv.conf stub symlink; `revert` undoes it |
 | `scripts/verify.sh` | 24 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
 | `scripts/lib/out.sh` | the shared output vocabulary — headers, labels, colour |
 | `scripts/lib/detect.sh` | what this machine is: init, seat backend, packaging, initramfs |
 | `test.sh` | build, install, and run a session on the primary TTY |
 
 The build always runs unprivileged and the install only copies, so cargo never
-runs under sudo and never leaves root-owned artifacts in a `target/`. `./kallos`
+runs under sudo and never leaves root-owned artifacts in a `target/`. `./dev`
 refuses to run as root for the same reason.

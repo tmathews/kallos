@@ -2,7 +2,7 @@ id = 3
 kind = "todo"
 title = "Captive portal login page has no route into the desktop"
 description = """
-A captive-portal login page has no route into the desktop. `./kallos net`
+A captive-portal login page has no route into the desktop. `./dev install`
 now stops DNS hanging behind a portal, but finding the portal URL is still a
 terminal job.
 

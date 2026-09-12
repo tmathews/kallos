@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+# The Kallos developer tool. Four commands, and between them they are the whole
+# of working on this tree:
+#
+#   ./dev install   make this machine match the tree — check everything, offer
+#                   to fix whatever is wrong or missing, build, install
+#   ./dev pull      bring every submodule to its latest main, and this repo too
+#   ./dev push      publish all the work and record it here, in one commit
+#   ./dev status    where everything is, and which of the above to run
+#
+# `install` is the whole machine, not just a file copy: system packages, the
+# network stack, the submodules, the build, the binaries, the login screen and
+# the boot configuration. Every one of those is CHECKED first and only then
+# OFFERED — a machine that is already set up prints OK lines and asks nothing,
+# and every question can be answered `n` without taking the rest down with it.
+# So it is the fresh-Arch command and the update command and the repair command,
+# and there is no way to tell which one you are running.
+#
+#   git clone --recursive git@github.com:tmathews/kallos.git
+#   cd kallos && ./dev
+#
+# This file is a DISPATCHER. It owns argument parsing, the ordering of the
+# phases, and the two guards below; it owns no build knowledge. The real work
+# lives in scripts/, which stays independently runnable — and that is still the
+# way to do one piece on its own, or to undo one:
+#
+#   scripts/lib/out.sh     the shared output vocabulary
+#   scripts/lib/detect.sh  what this machine is: init, seat backend, packaging
+#   scripts/net.sh      networkd, resolved, iwd, DHCP, the resolv.conf stub
+#   scripts/repo.sh     the submodule engine
+#   scripts/deps.sh     packages + muon
+#   scripts/build.sh    kosmos via muon, then cargo
+#   scripts/install.sh  copy the binaries into $PREFIX — only ever copies
+#   scripts/session.sh  the login screen + the boot GPU
+#   scripts/boot.sh     kernel flags, initramfs, loader timeout
+#   scripts/verify.sh   23 checks, no sudo, no TTY
+#
+# Two of those undo themselves, and `./dev` has no verb for it on purpose —
+# reverting is rare, deliberate, and reads better spelled out:
+#
+#   scripts/boot.sh revert      put the boot configuration back
+#   scripts/net.sh revert       put the network configuration back
+#
+# Usage: ./dev [command] [flags]           (default command: install)
+set -euo pipefail
+cd "$(dirname "$0")"
+root="$PWD"
+. "$root/scripts/lib/out.sh"
+
+CFG=release
+APPS=0
+DRY=0
+do_deps=1 do_verify=1
+PREFIX="${PREFIX:-/usr/local}"
+
+usage() {
+	sed -n '2,48p' "$0" | sed 's/^# \?//'
+	cat <<'EOF'
+
+Commands
+  install       [default] the whole machine, in this order, each one checked
+                and then offered:
+                  submodules   moved to the commits this repo records
+                  packages     pacman's list, then muon from source
+                  build        kosmos through muon, then cargo
+                  binaries     copied into $PREFIX
+                  network      networkd/resolved/iwd, DHCP, the resolver
+                  login screen greetd + phylax, and the GPU in the initramfs
+                  boot         kernel flags and the loader timeout
+                  verify       23 checks against a headless session
+  pull          every submodule to its own origin/main, and this repo to its
+                own. Rebases your unpushed commits onto the new tips and says
+                so; stops with an explanation if a rebase conflicts
+  push          publish all work in one go: every submodule's commits, then one
+                commit here recording the new pins, with a message written from
+                those submodules' own logs. Refuses to run if anything is
+                uncommitted or off main
+  status        where everything is, and which of the above to run
+  sync          put the submodules back on the pins this repo records — the
+                combination known to work together, as opposed to the tips.
+                What to reach for when a pull brought in something broken
+
+Flags
+  -n, --dry-run check everything and change nothing — what `doctor` used to be.
+                Also reports what pull/push/sync would do
+  --yes         answer yes to every offer. Includes the boot configuration,
+                which edits /etc and /boot and needs a reboot — say it on
+                purpose
+  --apps        also build/install yggdrasil, torrential and renzoku
+  --debug       build the debug config (default: release)
+  --release     build the release config
+  --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo
+                and leaves /etc alone, so the login screen is skipped there)
+  --no-deps     skip the package step (this is the non-Arch answer)
+  --no-verify   skip the checks at the end
+EOF
+}
+
+# ---- guards ---------------------------------------------------------------
+
+# Running the whole thing under sudo is the classic way to break this tree:
+# cargo would leave root-owned target/ directories behind and the next
+# unprivileged build fails on them. scripts/build.sh's header says the same;
+# this makes it impossible rather than documented.
+[ "${EUID:-$(id -u)}" -ne 0 ] || {
+	err "don't run this under sudo — cargo would leave root-owned target/ dirs"
+	die "run it as yourself; the steps that need root ask for it on their own."
+}
+
+# scripts/install.sh looks for each binary at $root/<crate>/target/$cfg/<crate>.
+# A CARGO_TARGET_DIR in the environment moves them somewhere else and the
+# install fails a preflight that reads like a build failure.
+[ -z "${CARGO_TARGET_DIR:-}" ] || {
+	err "CARGO_TARGET_DIR is set ($CARGO_TARGET_DIR)"
+	die "scripts/install.sh expects binaries under each crate's own target/."
+}
+
+# ---- args -----------------------------------------------------------------
+sub=""
+args=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--yes|-y)    export YES=1 ;;
+		--apps)      APPS=1 ;;
+		--debug)     CFG=debug ;;
+		--release)   CFG=release ;;
+		--prefix=*)  PREFIX="${1#--prefix=}" ;;
+		--no-deps)   do_deps=0 ;;
+		--no-verify) do_verify=0 ;;
+		-n|--dry-run) DRY=1 ;;
+		-h|--help)   usage; exit 0 ;;
+		debug|release) CFG="$1" ;;
+		-*) err "unknown flag: $1 (try --help)"; exit 2 ;;
+		*)  if [ -z "$sub" ]; then sub="$1"; else args+=("$1"); fi ;;
+	esac
+	shift
+done
+sub="${sub:-install}"
+export APPS DRY PREFIX
+
+# ---- the install phases ---------------------------------------------------
+#
+# Every phase here reports for itself and asks for itself — that is the whole
+# design, and it is why there is no longer a `deps`, `session`, `boot` or `net`
+# command to remember. The dispatcher's only jobs are the ORDER and making sure
+# one declined offer does not end the run.
+
+# Which mode the check-then-ask scripts run in. Without a terminal there is
+# nobody to ask, so they degrade to reporting rather than reading EOF off a
+# pipe and taking it for "no" — same contract deps.sh already had.
+askmode() {
+	if [ "$DRY" = 1 ]; then
+		echo check
+	elif [ "${YES:-0}" = 1 ] || [ -t 0 ]; then
+		echo "$1"
+	else
+		echo check
+	fi
+}
+
+# Phases that ask are allowed to come back non-zero: `n` at a prompt and a
+# genuine failure both exit 1, and from out here they are the same thing —
+# the step did not happen. Record it and keep going; the summary says so.
+undone=()
+step() {
+	local label=$1; shift
+	"$@" || undone+=("$label")
+	return 0
+}
+
+# The network, grouped with the other two steps that configure the machine
+# rather than the tree. AFTER the packages, and that ordering is not cosmetic:
+# this step enables iwd, and it cannot enable a package that is not installed
+# yet. It is safe this late because getting here at all means the machine
+# already has a working network — you cloned this repo over it. What this step
+# does is make it permanent, and make it survive a captive portal.
+phase_net() {
+	"$root/scripts/net.sh" "$(askmode apply)"
+}
+
+# The submodules — BEFORE the packages, because deps.sh's muon bootstrap
+# delegates to kosmos/scripts/muon-bootstrap.sh and dies with "sync the
+# submodules first" if that tree is not there yet. A plain `git clone` with no
+# --recursive is exactly that machine.
+phase_sync() {
+	"$root/scripts/repo.sh" sync
+}
+
+phase_deps() {
+	[ "$do_deps" = 1 ] || { hdr "packages"; skip "--no-deps"; return 0; }
+	# Each script prints its own header — they stay independently runnable, so
+	# the announcement belongs with the work, not with the dispatcher.
+	APPS="$APPS" "$root/scripts/deps.sh" "$([ "$DRY" = 1 ] && echo check || echo install)"
+}
+
+phase_build() {
+	if [ "$DRY" = 1 ]; then
+		hdr "build — $CFG"
+		skip "checked only — nothing is compiled"
+		return 0
+	fi
+	# The config is passed EXPLICITLY to both halves and always will be:
+	# scripts/build.sh defaults to debug and scripts/install.sh defaults to
+	# release, so the bare pair builds one thing and installs another.
+	APPS="$APPS" "$root/scripts/build.sh" "$CFG"
+}
+
+# The copy into $PREFIX. Unconditional in a real run — updating the binaries is
+# what you came for, and there is nothing to ask about a file copy.
+phase_binaries() {
+	if [ "$DRY" = 1 ]; then
+		hdr "binaries — $CFG -> $PREFIX"
+		local c built inst bins=(kosmos kallosd kallosctl hajime phylax)
+		[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku)
+		for c in "${bins[@]}"; do
+			# kosmos comes out of muon's build tree, the Rust four out of their
+			# own crate target dirs — the same split scripts/install.sh makes.
+			[ "$c" = kosmos ] && built="$root/kosmos/builds/$CFG/src/kosmos" \
+			                  || built="$root/$c/target/$CFG/$c"
+			inst="$PREFIX/bin/$c"
+			if [ ! -x "$inst" ]; then
+				row_ylw TODO "$c" "not installed"
+			elif [ -x "$built" ] && [ "$built" -nt "$inst" ]; then
+				row_ylw TODO "$c" "installed, but the $CFG build is newer"
+			else
+				row_grn OK "$c" "$inst"
+			fi
+		done
+		return 0
+	fi
+	# A system prefix needs root; a user prefix (or a DESTDIR stage) does not.
+	# Only the copy runs privileged — never the build above it.
+	if [ -w "$PREFIX" ] || [ -n "${DESTDIR:-}" ]; then
+		APPS="$APPS" PREFIX="$PREFIX" "$root/scripts/install.sh" "$CFG"
+	else
+		sudo APPS="$APPS" PREFIX="$PREFIX" "$root/scripts/install.sh" "$CFG"
+	fi
+}
+
+# The login screen, after the binaries and deliberately so: the greetd config it
+# offers names `phylax-greeter`, which the copy above is what puts on PATH —
+# offering to arm a login screen whose greeter does not exist yet would move the
+# failure to the next boot. A user prefix has no business editing /etc, so it is
+# skipped there rather than prompting for a sudo the rest of that run avoided.
+phase_session() {
+	if [ -n "${DESTDIR:-}" ] || [ "$PREFIX" != /usr/local ]; then
+		hdr "login screen"
+		skip "not a system prefix — /etc is left alone"
+		return 0
+	fi
+	PREFIX="$PREFIX" "$root/scripts/session.sh" "$(askmode apply)"
+}
+
+# The rest of the boot configuration — kernel flags and the loader timeout. The
+# GPU half of it has already been offered by the login screen step above, which
+# delegates to this same script; boot.sh is idempotent, so the overlap costs a
+# check and nothing else.
+#
+# This used to be out of `up` altogether on the grounds that it edits /boot and
+# needs a reboot. It is in now because it never acts without a `y` — the thing
+# that made it dangerous was doing it silently, not doing it here.
+phase_boot() {
+	if [ -n "${DESTDIR:-}" ] || [ "$PREFIX" != /usr/local ]; then
+		hdr "boot"
+		skip "not a system prefix — /boot and /etc are left alone"
+		return 0
+	fi
+	"$root/scripts/boot.sh" "$(askmode apply)"
+}
+
+phase_verify() {
+	[ "$do_verify" = 1 ] || { hdr "verify"; skip "--no-verify"; return 0; }
+	if [ "$DRY" = 1 ]; then
+		hdr "verify"
+		skip "checked only — the checks are not run"
+		return 0
+	fi
+	# verify.sh claims the real session bus names, so it refuses to run next to
+	# a live session — and being mid-session is the normal case for an update.
+	# Skip rather than fail; it stays available by hand.
+	if pgrep -x kosmos >/dev/null 2>&1; then
+		hdr "verify"
+		skip "a session is running — run scripts/verify.sh $CFG later"
+		return 0
+	fi
+	hdr "verify"
+	# Deliberately not fatal. By this point the build and the copy have already
+	# succeeded, and aborting would suggest they hadn't. The session checks are
+	# timing-sensitive on a cold cache — a first run on a new machine can lose
+	# the overlay-spawn race — so report it and let the exit status carry the
+	# bad news rather than swallowing the rest of the run.
+	"$root/scripts/verify.sh" "$CFG"
+}
+
+# What every phase below assumes: the tools, and a way to reach GitHub. Cheap,
+# and it turns three different confusing failures further down into one clear
+# one here.
+phase_preflight() {
+	hdr "preflight"
+	local t bad=0
+	for t in git cargo rustc clang pkg-config; do
+		if command -v "$t" >/dev/null; then
+			row_grn OK "$t" "$(command -v "$t")"
+		else
+			# Not fatal: the package step below is what installs most of these,
+			# so on a fresh machine this is a description, not a complaint.
+			row_ylw TODO "$t" "not on PATH — the packages step installs it"
+			bad=1
+		fi
+	done
+	if [ -f .gitmodules ]; then
+		row_grn OK submodules "$(grep -c '^\[submodule' .gitmodules) registered"
+	else
+		row_red MISS submodules "this tree is not a superproject yet"
+	fi
+	# Probe the transport, not a particular repo: the superproject's own remote
+	# may legitimately not exist yet, and `ls-remote` on a missing repo fails
+	# identically to a missing key. `ssh -T git@github.com` exits 1 even on
+	# success, so match the greeting instead of the status — and swallow that
+	# exit inside the pipeline, or `set -o pipefail` reports it as a failure.
+	if { ssh -o BatchMode=yes -o ConnectTimeout=5 -T git@github.com 2>&1 || true; } |
+		grep -q 'successfully authenticated'; then
+		row_grn OK github "ssh authenticates"
+	else
+		row_ylw WARN github "git@github.com did not authenticate (ssh key? network?)"
+	fi
+	command -v git >/dev/null || die "git is the one tool that has to be there already"
+	return 0
+}
+
+cmd_install() {
+	# The tree first, then the machine. Inside each half the order is forced:
+	# the submodules have to exist before deps.sh can bootstrap muon out of
+	# kosmos/, the binaries have to be on PATH before the login screen can name
+	# phylax-greeter, and iwd has to be installed before the network step can
+	# enable it.
+	phase_preflight
+	step submodules phase_sync
+	step packages   phase_deps
+	# Not `step`: everything below reads a file these two produce, so carrying
+	# on past a failure here only buys a second and stranger error message.
+	phase_build
+	phase_binaries
+	step network    phase_net
+	step "login screen" phase_session
+	step boot       phase_boot
+	step verify     phase_verify
+
+	hdr "done"
+	if [ "$DRY" = 1 ]; then
+		note "checked only — nothing was changed. Drop -n to act on the above."
+		return 0
+	fi
+	if [ "${#undone[@]}" -gt 0 ]; then
+		warn "not done: ${undone[*]}"
+		note "declined, or reported a problem above. Re-run ./dev install to be"
+		note "offered them again — nothing here is one-shot."
+	fi
+	note "ensure $PREFIX/bin is on PATH, then start a session with ./test.sh"
+	[ "${#undone[@]}" -eq 0 ]
+}
+
+# ---- dispatch -------------------------------------------------------------
+case "$sub" in
+	install) cmd_install ;;
+	pull)    "$root/scripts/repo.sh" pull ;;
+	push)    "$root/scripts/repo.sh" push ;;
+	status)  "$root/scripts/repo.sh" status ;;
+	sync)    "$root/scripts/repo.sh" sync "${args[@]+"${args[@]}"}" ;;
+	help)    usage ;;
+	# The commands that folded into `install`. Worth naming rather than falling
+	# through to "unknown": they were real last week, and somebody typing one
+	# wants the one sentence that says where it went, not a usage dump.
+	up)
+		err "up is now install — ./dev install, or just ./dev"; exit 2 ;;
+	deps|session|boot|net)
+		# Naming the real modes, not `--help`: none of these four take one, and
+		# sending somebody to a usage error is a worse answer than no answer.
+		case "$sub" in
+			deps)    modes="check | install" ;;
+			session) modes="check | apply" ;;
+			boot)    modes="check | apply | revert | initramfs" ;;
+			net)     modes="check | apply | revert" ;;
+		esac
+		err "$sub is a step inside ./dev install now — it checks, then offers"
+		note "to run or undo just this piece:  scripts/$sub.sh <$modes>"
+		exit 2 ;;
+	doctor)
+		err "doctor is now ./dev install -n — check everything, change nothing"; exit 2 ;;
+	build)   err "build is part of ./dev install now (or: scripts/build.sh $CFG)"; exit 2 ;;
+	verify)  err "verify is part of ./dev install now (or: scripts/verify.sh $CFG)"; exit 2 ;;
+	pin)     err "pin is gone — ./dev push pins, commits and publishes in one go"; exit 2 ;;
+	*) err "unknown command: $sub (try --help)"; exit 2 ;;
+esac

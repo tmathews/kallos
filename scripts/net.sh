@@ -8,10 +8,12 @@
 # resolution are systemd-networkd and systemd-resolved, and nothing in this tree
 # set either of them up until now. This does.
 #
-# **Optional, and never run by `./kallos up`.** Like scripts/boot.sh it edits
-# /etc, so it is a thing you run deliberately, once, on a machine you want to
-# behave like ours. It is safe inside `arch-chroot /mnt`: unit enablement still
-# works there, and everything that needs a running systemd is skipped.
+# `./dev install` offers this first, before the packages — without a lease and
+# a working resolver, pacman cannot reach a mirror at all, and on a fresh Arch
+# install that is the state of the machine. Like scripts/boot.sh it edits /etc
+# and never does so without a `y`; `scripts/net.sh revert` puts it back. It is
+# safe inside `arch-chroot /mnt`: unit enablement still works there, and
+# everything that needs a running systemd is skipped.
 #
 # What it changes, and why:
 #
@@ -57,18 +59,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+root="$PWD"
+. "$root/scripts/lib/out.sh"
+
 mode="${1:-check}"
 case "$mode" in
 	check|apply|revert) ;;
-	*) echo "!! usage: scripts/net.sh [check|apply|revert]" >&2; exit 2 ;;
+	*) err "usage: scripts/net.sh [check|apply|revert]"; exit 2 ;;
 esac
 
 etc="${ETC:-/etc}"
 bak=".bak-kallos"
 mark="# Written by kallos: scripts/net.sh"
-say() { printf '   %s\n' "$*"; }
-act() { printf '>> %s\n' "$*"; }
-
 # A fixture is not the machine: never sudo into it, and never let unit
 # enablement escape into the real system while pointed at one.
 system=0; [ "$etc" = /etc ] && system=1
@@ -207,10 +209,10 @@ EOF
 if [ "$system" = 1 ] && command -v systemctl >/dev/null; then
 	for u in NetworkManager dhcpcd; do
 		if systemctl is-enabled --quiet "$u" 2>/dev/null; then
-			echo "!! $u is enabled — this script only knows iwd + systemd-networkd" >&2
-			echo "   + systemd-resolved, and running both stacks is worse than either." >&2
-			echo "   Disable it first, or apply the settings by hand: they are all" >&2
-			echo "   listed at the top of this file." >&2
+			err "$u is enabled — this script only knows iwd + systemd-networkd"
+			note "+ systemd-resolved, and running both stacks is worse than either."
+			note "Disable it first, or apply the settings by hand: they are all"
+			note "listed at the top of this file."
 			exit 1
 		fi
 	done
@@ -278,75 +280,76 @@ fi
 todo=0
 todo_units=() todo_net=0 todo_resolv=0 todo_tmpfile=0 todo_dropin=0
 
-echo "== services =="
+hdr "network"
+sec "services"
 if ! command -v systemctl >/dev/null; then
-	say "SKIP  no systemctl — not a systemd machine; nothing below applies"
+	skip "no systemctl — not a systemd machine; nothing below applies"
 	exit 1
 fi
 for u in "${units[@]}"; do
 	if [ "$system" = 0 ]; then
-		say "SKIP  $u (fixture)"
+		skip "$u (fixture)"
 	elif systemctl is-enabled --quiet "$u" 2>/dev/null; then
-		say "OK    $u enabled"
+		ok "$u enabled"
 	elif [ "$(systemctl is-enabled "$u" 2>&1 || true)" = not-found ]; then
-		say "MISS  $u is not installed  -> scripts/deps.sh install"
+		todo "$u is not installed — the packages step above installs it"
 	else
-		say "TODO  enable $u"
+		todo "enable $u"
 		todo_units+=("$u"); todo=1
 	fi
 done
 
-echo "== addressing =="
+sec "addressing"
 if compgen -G "$netdir/*.network" >/dev/null; then
-	say "OK    $(compgen -G "$netdir/*.network" | wc -l) .network file(s) in $netdir — left alone"
+	ok "$(compgen -G "$netdir/*.network" | wc -l) .network file(s) in $netdir — left alone"
 else
-	say "TODO  no .network files in $netdir — networkd would hand out no leases"
-	say "      writing 20-{ethernet,wlan,wwan}.network (DHCP for en*/wl*/ww*)"
+	todo "no .network files in $netdir — networkd would hand out no leases"
+	note "writing 20-{ethernet,wlan,wwan}.network (DHCP for en*/wl*/ww*)"
 	todo_net=1; todo=1
 fi
 
-echo "== resolv.conf =="
+sec "resolv.conf"
 if [ -L "$resolv" ]; then
-	say "OK    symlink -> $(readlink "$resolv")"
+	ok "symlink -> $(readlink "$resolv")"
 elif [ -e "$resolv" ]; then
-	say "TODO  is a $(stat -c '%F' "$resolv"), not a symlink — resolved stays in"
-	say "      'foreign' mode and its stub is never consulted"
+	todo "is a $(stat -c '%F' "$resolv"), not a symlink — resolved stays in"
+	note "'foreign' mode and its stub is never consulted"
 	todo_resolv=1; todo=1
 else
-	say "TODO  missing — link it to the resolved stub"
+	todo "missing — link it to the resolved stub"
 	todo_resolv=1; todo=1
 fi
 if [ -e "$tmpfile" ]; then
-	say "OK    $tmpfile (the symlink heals itself)"
+	ok "$tmpfile (the symlink heals itself)"
 else
-	say "TODO  add $tmpfile — an L+ rule, so a package cannot undo the symlink"
+	todo "add $tmpfile — an L+ rule, so a package cannot undo the symlink"
 	todo_tmpfile=1; todo=1
 fi
 
-echo "== resolver =="
+sec "resolver"
 if [ -e "$dropin" ]; then
-	say "OK    $(basename "$dropin") present"
+	ok "$(basename "$dropin") present"
 else
-	say "TODO  add $(basename "$dropin") — FallbackDNS= so portals never hang"
+	todo "add $(basename "$dropin") — FallbackDNS= so portals never hang"
 	todo_dropin=1; todo=1
 fi
 
 if [ "$live" = 1 ] && command -v resolvectl >/dev/null; then
-	echo "== live state =="
+	sec "live state"
 	rmode=$(resolvectl status 2>/dev/null | sed -n 's/^ *resolv.conf mode: *//p' | head -1)
-	[ "$rmode" = stub ] && say "OK    resolved reports mode 'stub'" \
-	                    || say "TODO  resolved reports mode '${rmode:-unknown}' (want 'stub')"
+	[ "$rmode" = stub ] && ok "resolved reports mode 'stub'" \
+	                    || todo "resolved reports mode '${rmode:-unknown}' (want 'stub')"
 	if resolvectl status 2>/dev/null | grep -q 'Fallback DNS Servers'; then
-		say "TODO  fallback servers still configured — lookups will hang behind a portal"
+		todo "fallback servers still configured — lookups will hang behind a portal"
 	else
-		say "OK    no fallback servers configured"
+		ok "no fallback servers configured"
 	fi
-	resolvectl dns 2>/dev/null | sed 's/^/   per-link: /' || true
+	resolvectl dns 2>/dev/null | sed 's/^/        per-link: /' || true
 fi
 
 if [ "$mode" = check ]; then
 	echo
-	[ "$todo" = 0 ] && act "nothing to do" || act "run: scripts/net.sh apply"
+	[ "$todo" = 0 ] && act "nothing to do" || act "run: ./dev install    (or scripts/net.sh apply)"
 	exit 0
 fi
 
@@ -356,10 +359,10 @@ fi
 
 if [ -z "${YES:-}" ]; then
 	echo
-	echo "   This edits $etc: unit enablement, DHCP config, and the resolver."
-	echo "   scripts/net.sh revert puts it back."
+	say "This edits $etc: unit enablement, DHCP config, and the resolver."
+	say "scripts/net.sh revert puts it back."
 	read -r -p "   Apply? [y/N] " a
-	case "$a" in y|Y|yes|YES) ;; *) echo ">> aborted"; exit 1 ;; esac
+	case "$a" in y|Y|yes|YES) ;; *) act "aborted"; exit 1 ;; esac
 fi
 
 echo

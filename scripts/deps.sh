@@ -96,7 +96,7 @@ missing() { pacman -T "$@" 2>/dev/null || true; }
 required=("${build[@]}" "${kosmos[@]}" "${rust[@]}" "${runtime[@]}")
 [ "${APPS:-0}" = 1 ] && required+=("${apps[@]}")
 
-hdr "dependencies"
+hdr "packages"
 
 pm=$(pkg_manager)
 if [ "$pm" != pacman ]; then
@@ -271,8 +271,8 @@ group_check input "without it kosmos's lid probe returns UNKNOWN and falls back 
 # offers to do each rather than printing a command to retype — and it has to
 # run after the install, since the config it writes names a `phylax-greeter`
 # that only exists once the binaries are in place. This script runs first in
-# `./kallos up`, so a check here would report a state the same run is about to
-# change. `./kallos doctor` runs both.
+# `./dev install` before this step, so a check here would report a state the
+# same run has already changed. `./dev install -n` runs both, reporting only.
 # A Vulkan ICD, tested by looking for the manifests the loader itself reads
 # rather than by asking a package manager. Every distro installs them to the
 # same place because the Vulkan loader hardcodes it, so this is one of the few
@@ -317,7 +317,7 @@ if have_systemd; then
 	if [ ${#netbad[@]} -gt 0 ]; then
 		item "the network stack is not set up"
 		for b in "${netbad[@]}"; do note "$b"; done
-		note "run: ./kallos net        (reports; then ./kallos net apply)"
+		note "run: ./dev install    — it offers to set this up"
 	fi
 fi
 command -v xwayland-satellite >/dev/null || {

@@ -6,10 +6,11 @@
 # line, initramfs contents, bootloader timeout. `phylax/docs/boot.md` explains
 # why each of these is here and what it measured; this applies them.
 #
-# **Optional, and never run by `./kallos up`.** It edits /etc and /boot and its
-# effects appear at the next reboot, which is not something an idempotent
-# "update my machine" command should do behind your back. Run it deliberately,
-# once, on a machine you want to boot like ours does.
+# `./dev install` offers this, and offering is the whole of it: nothing below
+# runs without a `y`. It edits /etc and /boot and its effects appear at the next
+# reboot, so it was out of the install entirely for a while — but what made that
+# dangerous was doing it silently, not doing it there. Declining leaves the
+# machine exactly as it was, and `scripts/boot.sh revert` undoes an accepted one.
 #
 # What it changes, and why (measured on an AMD 780M laptop, 16.8s -> 14.6s from
 # power-on to the login screen):
@@ -53,7 +54,7 @@
 # `initramfs` is the odd one out: just the GPU-in-the-initramfs check and fix,
 # none of the console changes, no ESP needed. It is separable because it is the
 # one piece another part of the tree depends on — phylax's greetd drop-in — so
-# `./kallos up` can offer it without dragging the rest of this file in.
+# `./dev install` can offer it without dragging the rest of this file in.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . "$PWD/scripts/lib/out.sh"
@@ -225,7 +226,7 @@ initramfs_apply() {
 # Just the GPU-in-the-initramfs half, check and fix, with none of the console
 # changes the other modes make. This is the piece phylax's greetd drop-in
 # ASSUMES — it declines to order after udev-settle on the grounds that the DRM
-# device already exists — so `./kallos up` offers this one on its own, while
+# device already exists — so the login-screen step offers this one on its own, while
 # the rest of boot.sh stays the deliberate opt-in it has always been.
 #
 # No ESP preflight: nothing here reads a boot entry, and a machine on GRUB or a
@@ -297,7 +298,7 @@ want_menu=0; [ -n "${KEEP_MENU:-}" ] && want_menu=1
 # not have to know that to follow this.
 pending=0
 
-hdr "boot configuration"
+hdr "boot"
 
 sec "kernel command line"
 for f in "${entries[@]}"; do
@@ -332,7 +333,7 @@ fi
 
 if [ "$mode" = check ]; then
 	echo
-	[ "$pending" = 0 ] && act "nothing to do" || act "run: scripts/boot.sh apply"
+	[ "$pending" = 0 ] && act "nothing to do" || act "run: ./dev install    (or scripts/boot.sh apply)"
 	exit 0
 fi
 
