@@ -25,7 +25,7 @@ the machine — in the order they depend on each other:
 | **network** | networkd, resolved, iwd, DHCP, and the `resolv.conf` stub symlink |
 | **login screen** | greetd + phylax, and this machine's GPU into the initramfs |
 | **boot** | kernel flags and the loader timeout — firmware logo straight to the login screen, no console in between |
-| **verify** | 23 checks against a headless session |
+| **verify** | 25 checks against a headless session |
 
 **Every step is checked first and only then offered.** A machine that is
 already set up prints OK lines and asks nothing, so the same command is the

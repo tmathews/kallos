@@ -40,10 +40,58 @@ What it should assert instead is the open question:
   * both, as two checks, which is probably right: recovery works, and recovery
     gives up.
 
-The budget is 3 (\"respawning (1/3)\"), so the second one needs the kill loop to
+The budget is 3 ("respawning (1/3)"), so the second one needs the kill loop to
 outlast it and needs to know what kallosd does on the fourth death.
 """
 author = "Claude Opus 5 (1M context) (agent) <noreply@anthropic.com>"
-state = "open"
+state = "closed"
+resolution = "fixed"
 created_at = "2026-09-09T04:27:21.795195955Z"
-updated_at = "2026-09-09T04:27:21.795195955Z"
+updated_at = "2026-09-21T15:37:19.306277259Z"
+
+[[notes]]
+timestamp = "2026-09-21T15:37:15.189183463Z"
+author = "Thomas Mathews <thomas.c.mathews@gmail.com>"
+body = """
+Fixed. The old check is replaced by three, which is the "both, as two
+checks" option in the description plus the overlay half of the new contract:
+
+  * a crashed compositor was respawned ($wm0 -> $wm1), session intact
+  * the overlay was relaunched onto the new display ($ov0 -> $ov1)
+  * a crash loop exhausted the budget, ending the session and reaping the
+    overlay
+
+One thing the description did not have: the kill signal had to change, and not
+for cosmetic reasons. SIGTERM is a crash TODAY only because of kosmos #70 --
+the SIGTERM handler is registered after the process is multithreaded, so the
+signal lands on a default-disposition thread and kosmos dies at 143 with the
+handler never reached. The day #70 is fixed, SIGTERM becomes a clean exit 0,
+and on_wm_exit's exit-0 branch ends the session instead of respawning -- so a
+SIGTERM-based test would silently flip to asserting the other contract and
+still pass. SIGKILL cannot be handled, so it means the same thing before and
+after #70.
+
+The fourth-death question in the description ('needs to know what kallosd does
+on the fourth death') is answered: wm_respawns >= WM_RESPAWN_MAX sets quit, so
+the session ends. WM_HEALTHY_UPTIME is 60s, so the kills have to be back to
+back or the budget resets -- the loop kills each compositor as soon as it
+appears, which is well inside it.
+
+Verified on an isolated rig rather than by running verify.sh, because the live
+desktop was up and verify.sh refuses that for good reason (it claims session-bus
+names, and its cleanup pkills by name). The rig was a private session bus -- so
+kallosd's StopUnit/StartUnit found no org.freedesktop.systemd1 and degraded to
+warnings, which also keeps session_activate from stopping the real
+kallos-session.target -- a redirected XDG_RUNTIME_DIR, a headless kosmos, and
+pid lookups filtered by environ so nothing was ever killed by name. All three
+checks passed, and the daemon log showed the full ladder:
+
+  compositor died after 1.062624532s; respawning (1/3)
+  compositor died after 1.109223779s; respawning (2/3)
+  compositor died after 1.062611318s; respawning (3/3)
+  compositor exited 3 times without staying up; ending session
+
+Still unrun in situ: these three inside a full scripts/verify.sh, which needs a
+machine with no live session.
+
+Check count is now 25, and dev/README were updated to match."""

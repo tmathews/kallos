@@ -33,7 +33,7 @@
 #   scripts/install.sh  copy the binaries into $PREFIX — only ever copies
 #   scripts/session.sh  the login screen + the boot GPU
 #   scripts/boot.sh     kernel flags, initramfs, loader timeout
-#   scripts/verify.sh   23 checks, no sudo, no TTY
+#   scripts/verify.sh   25 checks, no sudo, no TTY
 #
 # Two of those undo themselves, and `./dev` has no verb for it on purpose —
 # reverting is rare, deliberate, and reads better spelled out:
@@ -67,7 +67,7 @@ Commands
                   network      networkd/resolved/iwd, DHCP, the resolver
                   login screen greetd + phylax, and the GPU in the initramfs
                   boot         kernel flags and the loader timeout
-                  verify       23 checks against a headless session
+                  verify       25 checks against a headless session
   pull          every submodule to its own origin/main, and this repo to its
                 own. Rebases your unpushed commits onto the new tips and says
                 so; stops with an explanation if a rebase conflicts

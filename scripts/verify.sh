@@ -351,13 +351,80 @@ else
 		XDG_RUNTIME_DIR="$V/rt" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" "$PTYPE" 'ok\n' >/dev/null; sleep 2
 	fi
 
-	# A primary compositor dying is the session being over.
-	kill -TERM "$(pgrep -x kosmos | head -1)" 2>/dev/null || true
+	# ---- crash recovery ---------------------------------------------------
+	# The contract from suite #4, stated positively: a compositor that DIES is
+	# an accident the daemon recovers from — a new compositor, a new overlay,
+	# and the session left standing with everything systemd holds for it. Only
+	# a compositor that was *asked* to go (exit 0: Super+Escape, or a SIGTERM
+	# it handled) ends the session. This block used to assert the opposite,
+	# which was the truth until kallosd learned to respawn.
+	#
+	# SIGKILL, not SIGTERM, is the crash here. kosmos registers its SIGTERM
+	# handler after the process is multithreaded, so the signal lands on a
+	# thread with the default disposition and it dies at 143 without ever
+	# reaching the handler (kosmos #70) — which makes SIGTERM a crash today
+	# and a clean exit 0 the day #70 is fixed, i.e. the other branch of
+	# on_wm_exit. SIGKILL cannot be handled, so it means the same thing before
+	# and after, and this test keeps asking the question it means to ask.
+	firstpid() { pgrep -x "$1" 2>/dev/null | head -1; }
+
+	wm0=$(firstpid kosmos) || true
+	ov0=$(firstpid hajime) || true
+	kill -KILL "$wm0" 2>/dev/null || true
+	for _ in $(seq 1 30); do
+		wm1=$(firstpid kosmos) || true
+		[ -n "$wm1" ] && [ "$wm1" != "$wm0" ] && break
+		sleep 1
+	done
+	wm1=$(firstpid kosmos) || true
+	if [ -n "$wm1" ] && [ "$wm1" != "$wm0" ] && pgrep -x kallosd >/dev/null; then
+		yes "a crashed compositor was respawned ($wm0 -> $wm1), session intact"
+	else
+		no "compositor crash was not recovered — see $log"
+	fi
+
+	# The overlay was a client of the compositor that died, so it died too.
+	# `overlay_pending` re-arms it and the SESSION register launches it again;
+	# a new pid is the whole point — the old one surviving would mean an
+	# orphan holding a dead socket.
+	for _ in $(seq 1 15); do
+		ov1=$(firstpid hajime) || true
+		[ -n "$ov1" ] && [ "$ov1" != "$ov0" ] && break
+		sleep 1
+	done
+	ov1=$(firstpid hajime) || true
+	if [ -n "$ov1" ] && [ "$ov1" != "$ov0" ]; then
+		yes "the overlay was relaunched onto the new display ($ov0 -> $ov1)"
+	else
+		no "the overlay did not come back with the compositor"
+	fi
+
+	# ---- recovery gives up ------------------------------------------------
+	# The budget is WM_RESPAWN_MAX (3), reset only by WM_HEALTHY_UPTIME (60s)
+	# of uptime — so a compositor killed the moment it appears walks it down
+	# instead of resetting it. One death happened above; deaths two and three
+	# are respawned, and the fourth is the one with no budget left, which ends
+	# the session. That is the half of #4 that must still reach the greeter:
+	# recovery that cannot recover has to stop flickering at the user.
+	kills=0
+	while [ "$kills" -lt 3 ]; do
+		wm=$(firstpid kosmos) || true
+		[ -n "$wm" ] || break
+		kill -KILL "$wm" 2>/dev/null || true
+		kills=$((kills + 1))
+		# Its replacement, or the daemon giving up — either ends the wait.
+		for _ in $(seq 1 15); do
+			pgrep -x kallosd >/dev/null || break
+			new=$(firstpid kosmos) || true
+			[ -n "$new" ] && [ "$new" != "$wm" ] && break
+			sleep 1
+		done
+	done
 	for _ in $(seq 1 10); do pgrep -x kallosd >/dev/null || break; sleep 1; done
 	if ! pgrep -x kallosd >/dev/null && ! pgrep -x hajime >/dev/null; then
-		yes "compositor death ended the session and reaped the overlay"
+		yes "a crash loop exhausted the budget, ending the session and reaping the overlay"
 	else
-		no "children survived the compositor"
+		no "the session outlived four compositor deaths — the budget did not end it"
 	fi
 fi
 
