@@ -97,6 +97,8 @@ printf 'corner_tl = spawn touch %s\ncorner_tr = spawn touch %s\n' \
 	>> "$V/home/.config/kallos/settings"
 
 export HOME="$V/home"
+# The C daemon predates XDG_CONFIG_HOME support; keep both on $HOME/.config.
+unset XDG_CONFIG_HOME
 # $XDG_RUNTIME_DIR is redirected, and PulseAudio lives in it — without this the
 # sound server simply vanishes and every audio field reads empty.
 export PULSE_SERVER="${PULSE_SERVER:-unix:/run/user/$(id -u)/pulse/native}"
