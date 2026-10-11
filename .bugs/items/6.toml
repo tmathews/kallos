@@ -1,0 +1,18 @@
+id = 6
+kind = "todo"
+title = "Export raise_fd_limit() helper for apps that hold many fds"
+description = """
+Add a public kallos::raise_fd_limit() that lifts the soft RLIMIT_NOFILE to the hard limit (getrlimit/setrlimit). Apps call it explicitly; do NOT do it implicitly in window::wayland::init, since the 1024 soft default protects select()-based code and mAId's visualizer consumes kallos-lib out of tree.
+
+Why: the Kallos session runs at soft 1024 / hard 524288. torrential (librqbit keeps every torrent file open) peaked ~1040 fds; Mesa then failed to export the per-frame sync file ('Too many open files') -> 'render failed: acquire: A host memory allocation has failed' and the window died ~1s after launch. Not a leak: fd count plateaus then falls.
+
+Follow-up once it lands:
+- torrential: replace its local raise_fd_limit() in src/main.rs with the kallos-lib one.
+- yggdrasil: call it at startup (check its fd count browsing large dirs: ls /proc/$(pgrep yggdrasil)/fd | wc -l).
+- Verify mAId's visualizer still builds (out-of-tree consumer).
+
+Repro: (ulimit -Sn 1024; torrential) with the current session torrents."""
+author = "Thomas Mathews <thomas.c.mathews@gmail.com>"
+state = "open"
+created_at = "2026-10-09T05:09:03.018773139Z"
+updated_at = "2026-10-09T05:09:03.022285583Z"
