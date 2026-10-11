@@ -116,7 +116,7 @@ note "scratch dir $V"
 # they can say on their own: it listens, the lists render through the real
 # consumer, and no verb takes it down.
 sec "the daemon answers"
-XDG_RUNTIME_DIR="$V/rt" "$KD" --verbose
+KALLOS_LOG_IDENT=kallosd-verify XDG_RUNTIME_DIR="$V/rt" "$KD" --verbose
 sleep 2   # let it finish connecting to PulseAudio and priming its caches
 
 [ -S "$V/rt/kallos/kdaemon.sock" ] && yes "kallosd is listening" || no "kallosd never listened"
@@ -173,7 +173,7 @@ else
 	rm -f "$V/startup-marker"
 	log="$V/session.log"
 	XDG_RUNTIME_DIR="$V/rt" WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=2 \
-		nohup "$KD" --verbose --wm "$KOSMOS" --overlay "$HAJIME" >"$log" 2>&1 &
+		KALLOS_LOG_TARGET=stderr nohup "$KD" --verbose --wm "$KOSMOS" --overlay "$HAJIME" >"$log" 2>&1 &
 	# The compositor needs a moment to bring up Vulkan and register.
 	for _ in $(seq 1 30); do grep -q 'session display registered' "$log" && break; sleep 1; done
 
@@ -333,15 +333,15 @@ else
 	else
 		WAYLAND_DISPLAY=$(sed -n 's/.*WAYLAND_DISPLAY=\([a-z0-9-]*\).*/\1/p' "$log" | head -1)
 		XDG_RUNTIME_DIR="$V/rt" "$CTL" power lock >/dev/null; sleep 3
-		grep -q 'kallosd\] session locked' "$log" \
+		grep -qF 'compositor reports the session locked' "$log" \
 			&& yes "power lock locked the session (compositor relay seen)" \
 			|| no "no session-locked relay after power lock"
 		XDG_RUNTIME_DIR="$V/rt" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" "$PTYPE" 'wrong\n' >/dev/null; sleep 2
-		pgrep -x phylax >/dev/null && ! grep -q 'session unlocked' "$log" \
+		pgrep -x phylax >/dev/null && ! grep -qF 'compositor reports the session unlocked' "$log" \
 			&& yes "a wrong password left it locked" \
 			|| no "a wrong password unlocked, or the locker died"
 		XDG_RUNTIME_DIR="$V/rt" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" "$PTYPE" 'ok\n' >/dev/null; sleep 2
-		grep -q 'kallosd\] session unlocked' "$log" && ! pgrep -x phylax >/dev/null \
+		grep -qF 'compositor reports the session unlocked' "$log" && ! pgrep -x phylax >/dev/null \
 			&& yes "the right password unlocked and the locker exited" \
 			|| no "the right password did not unlock"
 		# A locker that dies with the lock held is respawned.

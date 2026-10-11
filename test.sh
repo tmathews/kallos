@@ -21,11 +21,15 @@ sudo scripts/install.sh "$MODE"
 
 # KWM_PLANES_DUMP=1 -> dump each window's surface tree (which subsurface is a
 #   dmabuf, its format/modifier) — the first thing to look at when a video
-#   doesn't engage. --verbose -> WLR_DEBUG (floods the log; keep runs short).
+#   doesn't engage. --verbose -> every kosmos category at DEBUG (wlroots
+#   stays at INFO unless KALLOS_LOG names it: KALLOS_LOG=wlroots=debug).
+# KALLOS_LOG_TARGET=stderr -> keep the whole run (daemon, compositor, overlay,
+#   everything they spawn) in /tmp/test.log instead of the journal, which is
+#   where a normal greetd session logs (journalctl --user -t kosmos).
 # --wm points at the freshly installed binary so the flags reach kosmos.
 # --overlay takes no argument: the default IS the sibling hajime, spawned bare
 #   (resident + hidden; summon with `kallosctl overlay toggle`).
-KWM_PLANES_DUMP=1 \
+KWM_PLANES_DUMP=1 KALLOS_LOG_TARGET=stderr \
 	kallosd --wm "$PREFIX/bin/kosmos --verbose" \
 	        --overlay >/tmp/test.log 2>&1
 
@@ -35,9 +39,8 @@ KWM_PLANES_DUMP=1 \
 # Note kosmos's SIGTERM teardown still aborts on a wlroots wlr_session_lock_v1
 # assertion — a known bug, tracked separately.
 #
-# hajime's own output is detached to /dev/null by the daemon spawn; its crash
-# handler writes a backtrace to stderr, so run it by hand under the session if
-# it ever dies silently (kallosd logs the respawn).
+# hajime's output, crash backtraces included, lands in the same file; kallosd
+# logs how every child exited ("compositor killed by SIGSEGV (core dumped)").
 #
 # To run a scratch build of the overlay against this session without installing
 # it, pass the command explicitly:
