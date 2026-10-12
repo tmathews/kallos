@@ -4,6 +4,12 @@ title = "[kallos-lib] Overlay apps exit when their layer surface is closed (ever
 description = "kallos-lib/src/window/wayland.rs handled zwlr_layer_surface_v1.closed with state.running = false (since 2b494c4, 2026-07-29). kosmos closes an output-less overlay when no output survives, and wlroots' DRM backend destroys every output when the session pauses, so EVERY VT switch closed it. hajime's resident overlay exited each time (journal: 'exit after N frames' on each 'Switching from VT'; kallosd respawns it cold on the next toggle). At the login screen phylax --greet exited, phylax-greeter ended, greetd restarted with vt=1 switch=true and dragged the user back to VT 1: three times in a row on 2026-10-12 10:11. Fix: on closed, destroy the layer surface, commit a null buffer, clear configured; when an output arrives (or one is removed with others left) create a new layer surface on the same wl_surface and, if the app had it shown, commit so the configure re-maps it ('remapped' -> swapchain rebuild, which hajime and phylax already handle). Verified headless (nested kosmos with WLR_WL_OUTPUTS=1, its only output destroyed via the host's foreign-toplevel close): installed hajime and phylax --greet EXIT; fixed builds SURVIVE, idle at 0-10 ms CPU over 4 s. The reopen half (an output coming back) cannot be driven headless (kosmos adds no outputs at runtime and refuses to disable the last one); verify with a real VT switch."
 author = "Claude Opus 5.5 (agent) <noreply@anthropic.com>"
 severity = 1
-state = "open"
+state = "closed"
+resolution = "fixed"
 created_at = "2026-10-12T17:25:13.140327248Z"
-updated_at = "2026-10-12T17:25:13.140328731Z"
+updated_at = "2026-10-12T17:52:04.330530681Z"
+
+[[notes]]
+timestamp = "2026-10-12T17:52:04.330528347Z"
+author = "Claude Opus 5.5 (agent) <noreply@anthropic.com>"
+body = "Fixed by kallos-lib 23f436b. Verified on hardware 2026-10-12 by the user: VT switch from the live session and from the login screen; hajime survives and the greeter no longer drags back to VT 1."
