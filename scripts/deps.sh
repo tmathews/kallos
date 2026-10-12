@@ -68,7 +68,8 @@ kosmos=(wayland wayland-protocols libxkbcommon pixman libdrm libinput seatd
 rust=(libpulse alsa-lib)
 
 # The opt-in apps. torrential's librqbit pulls native-tls -> openssl-sys, which
-# is NOT vendored. yggdrasil and renzoku need nothing beyond the shared set.
+# is NOT vendored. yggdrasil, renzoku and library need nothing beyond the
+# shared set (library is pure Rust; ffmpeg, below, is optional for it).
 apps=(openssl)
 
 # Needed by a running session rather than by the build: the portal pair
@@ -82,9 +83,11 @@ runtime=(xdg-desktop-portal xdg-desktop-portal-gtk pipewire-pulse bluez
          noto-fonts-emoji xorg-xwayland pciutils greetd)
 
 # Nice to have: a fallback locker (phylax is the default now) and a terminal,
-# yggdrasil's clipboard and file handlers, `lspci` for kallosd's sysinfo, and
-# wlroots' optional plane-offload and colour-management deps.
-optional=(swaylock foot wl-clipboard imv mpv libliftoff lcms2)
+# yggdrasil's clipboard and file handlers, `lspci` for kallosd's sysinfo,
+# wlroots' optional plane-offload and colour-management deps, and ffmpeg, which
+# library runs (never links) for video durations and thumbnails — without it
+# those are skipped.
+optional=(swaylock foot wl-clipboard imv mpv libliftoff lcms2 ffmpeg)
 
 # ---- what's missing -------------------------------------------------------
 # pacman -T is the right tool: it needs no root, and prints exactly the

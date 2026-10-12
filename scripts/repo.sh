@@ -38,9 +38,9 @@ cd "$(dirname "$0")/.."
 root="$PWD"
 . "$root/scripts/lib/out.sh"
 
-# The nine. kbrowser has no remote yet, so it stays a plain sibling clone,
+# The ten. kbrowser has no remote yet, so it stays a plain sibling clone,
 # ignored by the root (see .gitignore).
-mods=(kosmos kallos-lib kallosd kallosctl hajime yggdrasil torrential renzoku phylax)
+mods=(kosmos kallos-lib kallosd kallosctl hajime yggdrasil torrential renzoku phylax library)
 
 # One row per submodule. These shadow nothing in lib/out.sh: the plain labels
 # there take a message, these take a name and a detail, so they get their own

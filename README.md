@@ -93,6 +93,7 @@ binaries declare `kallos = { path = "../kallos-lib" }`.
 | `phylax/` | the locker and greeter |
 | `kallos-lib/` | the `kallos` crate the Rust binaries share |
 | `yggdrasil/` `torrential/` `renzoku/` | apps — opt-in, `--apps` |
+| `library/` | the media library and launcher (working name; repo `bunko`) — opt-in, `--apps` |
 
 `kbrowser/` is **not** a submodule — it has no remote yet. Clone it alongside
 if you want it; the root ignores it.

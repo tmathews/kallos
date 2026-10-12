@@ -34,3 +34,7 @@
 	path = phylax
 	url = git@github.com:tmathews/phylax.git
 	branch = main
+[submodule "library"]
+	path = library
+	url = git@github.com:tmathews/bunko.git
+	branch = main

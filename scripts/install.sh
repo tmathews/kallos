@@ -17,7 +17,7 @@
 #   PREFIX=$HOME/.local scripts/install.sh  # user prefix (no sudo)
 #   DESTDIR=/tmp/stage scripts/install.sh   # staged install (packaging)
 #   KWM_SRC=<path>                          # where the compositor tree lives
-#   APPS=1                                  # also install yggdrasil/torrential/renzoku
+#   APPS=1                                  # also install yggdrasil/torrential/renzoku/library
 # System prefixes (the default /usr/local) need write access — run under sudo.
 set -euo pipefail
 
@@ -34,11 +34,11 @@ kosmos_bin="$kosmos_src/builds/$cfg/src/kosmos"
 # name -> built path. The Rust four come from their own crate target dirs.
 crates=(kallosd kallosctl hajime phylax)
 
-# APPS=1 adds the three opt-in apps, exactly as scripts/build.sh does — build
+# APPS=1 adds the four opt-in apps, exactly as scripts/build.sh does — build
 # and install must agree or the preflight below fails on binaries that were
 # never asked for. They install as plain binaries and nothing else: their icons
 # and shaders are include_bytes!'d, and none of them ships a .desktop file.
-[ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku) || true
+[ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku library) || true
 
 # Pre-flight: everything must already be built.
 missing=0

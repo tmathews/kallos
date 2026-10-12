@@ -86,7 +86,7 @@ Flags
   --yes         answer yes to every offer. Includes the boot configuration,
                 which edits /etc and /boot and needs a reboot — say it on
                 purpose
-  --apps        also build/install yggdrasil, torrential and renzoku
+  --apps        also build/install yggdrasil, torrential, renzoku and library
   --debug       build the debug config (default: release)
   --release     build the release config
   --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo
@@ -211,7 +211,7 @@ phase_binaries() {
 	if [ "$DRY" = 1 ]; then
 		hdr "binaries — $CFG -> $PREFIX"
 		local c built inst bins=(kosmos kallosd kallosctl hajime phylax)
-		[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku)
+		[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library)
 		for c in "${bins[@]}"; do
 			# kosmos comes out of muon's build tree, the Rust four out of their
 			# own crate target dirs — the same split scripts/install.sh makes.

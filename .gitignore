@@ -3,7 +3,3 @@
 # kbrowser has no git remote at all yet. It can become a submodule once it is
 # pushed somewhere.
 /kbrowser/
-# library (working name; the media library + launcher) is its own repo with
-# no remote yet. It becomes a submodule, and joins the --apps lists in
-# scripts/build.sh, scripts/install.sh, scripts/repo.sh and dev, at plan M9.
-/library/
