@@ -1,0 +1,19 @@
+id = 8
+kind = "todo"
+title = "[kallos-lib] Pick buffer: exact hit-testing for shapes that are not described by hand"
+description = """
+Deferred by the user on 2026-10-16, after Interact got occlusion and hit shapes (Rect/RRect/Circle/Path, unions and cuts).
+
+Idea: render each frame's interactive items a second time into an offscreen target, each item filled flat with a colour encoding its Id. Read back the one pixel under the pointer; that id is the hovered item. This is exact for any shape, including text, rotated items and alpha. It is the depth-buffer picking idea that mAId's visualizer already uses.
+
+Costs:
+- A frame of latency: the readback lands after the frame that drew it.
+- Readback plumbing in render2d: a target and a small copy per frame.
+- An id to colour mapping that cannot collide.
+- Items that move between the frame drawn and the frame read.
+
+Worth it only if UI becomes free-form art where describing shapes by hand costs more than this. Until then, use interact::Shape."""
+author = "Claude Opus 5.5 (agent) <noreply@anthropic.com>"
+state = "open"
+created_at = "2026-10-16T15:29:18.485377396Z"
+updated_at = "2026-10-16T15:29:18.485378789Z"
