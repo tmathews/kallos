@@ -98,6 +98,23 @@ sha()       { git -C "$1" rev-parse "${2:-HEAD}" 2>/dev/null; }
 is_anc()    { git -C "$1" merge-base --is-ancestor "$2" "$3" 2>/dev/null; }
 count()     { git -C "$1" rev-list --count "$2" 2>/dev/null || echo 0; }
 
+# Fetch, and say so when it fails. Swallowing this error is how a pull once
+# reported every repo "up to date" against week-old refs while offline, and the
+# push straight after was rejected all down the list. On failure the reason —
+# git's first line, minus its "fatal: " — is left in $fetch_err.
+fetch_err=""
+fetch() {
+	local out
+	out=$(git -C "$1" fetch --prune --quiet "$2" 2>&1 >/dev/null) && { fetch_err=""; return 0; }
+	fetch_err=$(printf '%s\n' "$out" | sed -n '/./{s/^fatal: //;p;q}')
+	fetch_err=${fetch_err:-git fetch failed}
+	return 1
+}
+
+# The remote has no main at all: a repo created on GitHub and never pushed to.
+# Only meaningful straight after a successful fetch, which prunes the ref.
+no_main()   { ! git -C "$1" rev-parse --verify -q "$2/main" >/dev/null; }
+
 # "1 commit", "4 commits". Worth the three lines: "commit(s)" in a generated
 # commit message reads as a template nobody filled in, which is most of what
 # made the old hand-written pin messages feel like noise.
@@ -109,7 +126,9 @@ plural()    { [ "$1" = 1 ] && printf '%s %s' "$1" "$2" || printf '%s %ss' "$1" "
 unique_of() {
 	local m=$1 rem=$2 refs=(HEAD)
 	git -C "$m" rev-parse --verify -q main >/dev/null && refs+=(main)
-	git -C "$m" rev-list --count "^$rem/main" "${refs[@]}" 2>/dev/null || echo 0
+	# No remote main yet means nothing is published: every commit is unique.
+	no_main "$m" "$rem" || refs+=("^$rem/main")
+	git -C "$m" rev-list --count "${refs[@]}" 2>/dev/null || echo 0
 }
 
 # Changes to the root's OWN files — scripts/, README, .gitmodules. Deliberately
@@ -187,7 +206,7 @@ pull_root() {
 	local rem ahead behind
 	rem=$(root_remote) || { r_skip "(root)" "no remote yet"; return 0; }
 	git rev-parse --verify -q HEAD >/dev/null || { r_skip "(root)" "no commits yet"; return 0; }
-	git fetch --prune --quiet "$rem" 2>/dev/null || true
+	fetch . "$rem" || { r_fail "(root)" "fetch failed — $fetch_err"; return 0; }
 	git rev-parse --verify -q "$rem/main" >/dev/null || { r_skip "(root)" "no $rem/main"; return 0; }
 
 	ahead=$(count . "$rem/main..HEAD")
@@ -260,10 +279,20 @@ pull_one() {
 	fi
 
 	rem=$(remote_of "$m") || { r_fail "$m" "no usable remote — add one named 'origin'"; return; }
-	git -C "$m" fetch --prune --quiet "$rem" 2>/dev/null || true
-	target=$(sha "$m" "$rem/main") || { r_fail "$m" "no $rem/main"; return; }
+	fetch "$m" "$rem" || { r_fail "$m" "fetch failed — $fetch_err"; return; }
 	head=$(sha "$m")
 	br=$(branch_of "$m")
+	# An empty remote is a repo that has not been published yet, not a fault:
+	# there is nothing to pull, and `push` makes the first one.
+	if no_main "$m" "$rem"; then
+		if [ "$br" = main ]; then
+			r_ok "$m" "${dim}${head:0:8}${off} ${ylw}($(unique_of "$m" "$rem") to push — $rem is empty)${off}"
+		else
+			r_fail "$m" "no $rem/main, and not on main to publish one"
+		fi
+		return
+	fi
+	target=$(sha "$m" "$rem/main")
 
 	# A detached HEAD is what `submodule update --init` leaves behind, and it is
 	# hostile to the reason this repo is a superproject at all — pushing from
@@ -433,6 +462,9 @@ cmd_push() {
 		[ "$n" -gt 0 ] || continue
 		if [ "${DRY:-0}" = 1 ]; then r_move "$m" "would push $(plural "$n" commit)"; pushed=$((pushed + 1)); continue; fi
 		if git -C "$m" push -q "$rem" main 2>/dev/null; then
+			# The push wrote $rem/main locally; on a first push that is the
+			# first time the ref exists, so main can only now track it.
+			fix_upstream "$m" "$rem"
 			r_move "$m" "pushed $(plural "$n" commit)"; pushed=$((pushed + 1))
 		else
 			r_fail "$m" "push rejected — $rem/main moved; run ./dev pull first"
@@ -507,12 +539,14 @@ cmd_status() {
 	# remote-tracking refs — no worktree, no index, nothing recoverable at
 	# stake. Without it "behind" is measured against whenever you last fetched,
 	# and a status that says +0/-0 while the tips have moved is a trap rather
-	# than a report. Offline, every fetch fails quietly and the numbers are
-	# simply as stale as the machine is.
-	git fetch --prune --quiet origin 2>/dev/null || true
+	# than a report. A failed fetch still leaves a table worth printing, but
+	# one that is as stale as the machine is — so it is named, not hidden.
+	local stale=() stale_err=""
+	fetch . origin || { stale+=("(root)"); stale_err=$fetch_err; }
 	for m in "${mods[@]}"; do
 		[ -e "$m/.git" ] || continue
-		rem=$(remote_of "$m") && git -C "$m" fetch --prune --quiet "$rem" 2>/dev/null || true
+		rem=$(remote_of "$m") || continue
+		fetch "$m" "$rem" || { stale+=("$m"); stale_err=$fetch_err; }
 	done
 
 	printf '%-12s %-16s %-7s %-9s %s\n' SUBMODULE BRANCH STATE AHEAD/BEH PIN
@@ -532,6 +566,10 @@ cmd_status() {
 			ahead=$(count "$m" "$rem/main..HEAD"); behind=$(count "$m" "HEAD..$rem/main")
 			[ "$ahead" = 0 ] || n_ahead=$((n_ahead + 1))
 			[ "$behind" = 0 ] || n_behind=$((n_behind + 1))
+		elif [ -n "${rem:-}" ] && [[ " ${stale[*]} " != *" $m "* ]]; then
+			# Fetched fine and still no main: an empty remote, all of it ahead.
+			ahead=$(unique_of "$m" "$rem"); behind=0
+			[ "$ahead" = 0 ] || n_ahead=$((n_ahead + 1))
 		fi
 		pin=$(pinned_of "$m"); head=$(sha "$m")
 		if   [ -z "$pin" ];        then drift="${dim}unpinned${off}"; n_drift=$((n_drift + 1))
@@ -545,6 +583,11 @@ cmd_status() {
 	# The part that matters: what to do about it.
 	sec "what to do"
 	local acted=0
+	if [ "${#stale[@]}" -gt 0 ]; then
+		fail "fetch failed for ${stale[*]} — the numbers above are stale"
+		note "$stale_err"
+		acted=1
+	fi
 	if [ "$n_branch" -gt 0 ]; then
 		fail "$(plural "$n_branch" submodule) not on main — pull and push both refuse to run"
 		note "run: git -C <submodule> switch main"
@@ -589,13 +632,19 @@ sync_one() {
 	fi
 
 	rem=$(remote_of "$m") || { r_fail "$m" "no usable remote — add one named 'origin'"; return; }
-	git -C "$m" fetch --prune --quiet "$rem" 2>/dev/null || true
+	local fetched=1
+	fetch "$m" "$rem" || fetched=0
 
 	if [ "$mode" = latest ]; then
+		[ "$fetched" = 1 ] || { r_fail "$m" "fetch failed — $fetch_err"; return; }
 		target=$(sha "$m" "$rem/main") || { r_fail "$m" "no $rem/main"; return; }
 	else
 		target=$(pinned_of "$m")
 		[ -n "$target" ] || { r_skip "$m" "no pin recorded yet — run ./dev push"; return; }
+		# A pin already on this machine needs no network: an offline install
+		# still works. Only a pin we would have had to download is a failure.
+		[ "$fetched" = 1 ] || git -C "$m" cat-file -e "$target^{commit}" 2>/dev/null ||
+			{ r_fail "$m" "fetch failed — $fetch_err"; return; }
 	fi
 	head=$(sha "$m")
 
