@@ -10,6 +10,11 @@
 #           so the nested modifier is Alt). The rig's kallosd still reads
 #           /dev/input directly, so a gamepad drives it whatever has focus.
 # headless  no window; drive it with the rig's kallosctl and grim -o HEADLESS-1.
+# tty       kosmos on the real displays (DRM), for hardware checks. Start it
+#           from a text login on another VT (Ctrl+Alt+F2): it takes that VT's
+#           logind session, and the live session on tty1 just pauses — switch
+#           back with Ctrl+Alt+F1. RIG_IDLE_MS sets the display-off timeout
+#           (default 0, off).
 #
 # What keeps it off the live session:
 #   - XDG_RUNTIME_DIR is redirected, so kallosctl and hajime talk to the rig's
@@ -41,12 +46,21 @@ rig_env() {
 	echo "export DBUS_SESSION_BUS_ADDRESS=$(cat "$R/bus" 2>/dev/null)"
 }
 
+# The binary /proc/$1 runs is $2 — even if $2 was rebuilt since (the kernel
+# then reports the old inode as "<path> (deleted)").
+runs() {
+	[ -d "/proc/$1" ] || return 1
+	local e
+	e=$(readlink "/proc/$1/exe") || return 1
+	[ "$e" -ef "$2" ] || [ "${e% (deleted)}" = "$2" ]
+}
+
 stop() {
 	[ -f "$R/pid" ] || { note "no rig running"; return 0; }
 	local pid
 	pid=$(cat "$R/pid")
 	# Only ever the pid we started, and only if it is still that kallosd.
-	if [ -d "/proc/$pid" ] && [ "$(readlink "/proc/$pid/exe")" -ef "$(cat "$R/exe")" ]; then
+	if runs "$pid" "$(cat "$R/exe")"; then
 		kill "$pid"
 		for _ in $(seq 1 50); do [ -d "/proc/$pid" ] || break; sleep 0.1; done
 		[ -d "/proc/$pid" ] && err "kallosd $pid did not exit" || act "stopped kallosd $pid"
@@ -60,7 +74,7 @@ stop() {
 	kp=$(sed -n "s/.*spawned compositor '\([^ ']*\).*(pid \([0-9]*\)).*/\1 \2/p" "$R/log" | tail -1)
 	if [ -n "$kp" ]; then
 		set -- $kp
-		if [ -d "/proc/$2" ] && [ "$(readlink "/proc/$2/exe")" -ef "$1" ]; then
+		if runs "$2" "$1"; then
 			kill "$2"
 			for _ in $(seq 1 50); do [ -d "/proc/$2" ] || break; sleep 0.1; done
 			act "stopped kosmos $2"
@@ -71,7 +85,10 @@ stop() {
 
 start() {
 	local mode="${1:-window}" cfg="${2:-debug}"
-	case "$mode" in window|headless) ;; *) die "mode: window|headless" ;; esac
+	case "$mode" in window|headless|tty) ;; *) die "mode: window|headless|tty" ;; esac
+	if [ "$mode" = tty ] && [ -z "${XDG_VTNR:-}" ]; then
+		die "tty mode needs a text login on a VT (Ctrl+Alt+F2), not this shell"
+	fi
 	local KD="$root/kallosd/target/$cfg/kallosd"
 	local KOSMOS="$root/kosmos/builds/$cfg/src/kosmos"
 	local HAJIME="$root/hajime/target/$cfg/hajime"
@@ -94,7 +111,7 @@ start() {
 		XDG_RUNTIME_DIR="$R/rt"
 		PULSE_SERVER="unix:/run/user/$uid/pulse/native"
 		KALLOS_LOG_TARGET=stderr
-		KWM_IDLE_MS=0
+		KWM_IDLE_MS="${RIG_IDLE_MS:-0}"
 	)
 	if [ "$mode" = window ]; then
 		local outer="${WAYLAND_DISPLAY:-wayland-0}"
@@ -102,7 +119,7 @@ start() {
 		case "$outer" in /*) ;; *) outer="/run/user/$uid/$outer" ;; esac
 		[ -S "$outer" ] || die "no outer compositor at $outer"
 		env+=(WAYLAND_DISPLAY="$outer" WLR_BACKENDS=wayland)
-	else
+	elif [ "$mode" = headless ]; then
 		env+=(WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=vulkan)
 	fi
 
@@ -130,5 +147,5 @@ case "${1:-}" in
 	start) shift; start "$@" ;;
 	stop) stop ;;
 	env) rig_env ;;
-	*) die "usage: scripts/rig.sh start [window|headless] [debug|release] | env | stop" ;;
+	*) die "usage: scripts/rig.sh start [window|headless|tty] [debug|release] | env | stop" ;;
 esac
