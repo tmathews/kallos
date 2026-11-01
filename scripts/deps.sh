@@ -58,8 +58,8 @@ build=(base-devel clang git pkgconf glslang rust)
 # libdisplay-info and hwdata are wlroots' own hard deps; libliftoff and lcms2
 # are its optional ones and live in `optional` below.
 kosmos=(wayland wayland-protocols libxkbcommon pixman libdrm libinput seatd
-        systemd-libs mesa vulkan-headers vulkan-icd-loader fontconfig
-        harfbuzz freetype2 hwdata libdisplay-info)
+        systemd-libs mesa vulkan-headers vulkan-icd-loader hwdata
+        libdisplay-info)
 
 # System libraries the Rust half links. kallosd -> libpulse-sys; hajime's
 # rodio -> cpal -> alsa-sys. Everything else in the Rust tree is either pure
