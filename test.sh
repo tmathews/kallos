@@ -48,4 +48,5 @@ KWM_PLANES_DUMP=1 KALLOS_LOG_TARGET=stderr \
 #
 # To check the daemon rather than the session — a headless session, the
 # startup/supervision invariants, the locker and the display domain — use
-# scripts/verify.sh, which needs neither sudo nor the TTY.
+# scripts/rig.sh verify, which needs neither sudo nor the TTY and runs beside
+# a live session.

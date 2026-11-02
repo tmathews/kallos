@@ -13,7 +13,7 @@ cd kallos && ./dev
 ```
 
 That is the whole of it. `./dev` is `./dev install`, and `install` means the
-machine, not a file copy — it works through eight steps — the tree first, then
+machine, not a file copy — it works through seven steps — the tree first, then
 the machine — in the order they depend on each other:
 
 | | |
@@ -25,7 +25,6 @@ the machine — in the order they depend on each other:
 | **network** | networkd, resolved, iwd, DHCP, and the `resolv.conf` stub symlink |
 | **login screen** | greetd + phylax, and this machine's GPU into the initramfs |
 | **boot** | kernel flags and the loader timeout — firmware logo straight to the login screen, no console in between |
-| **verify** | 25 checks against a headless session |
 
 **Every step is checked first and only then offered.** A machine that is
 already set up prints OK lines and asks nothing, so the same command is the
@@ -169,14 +168,15 @@ Four, and a fifth for when a pull goes wrong.
 ./dev sync          put the submodules back on the pins this repo records
 ```
 
-`deps`, `session`, `boot`, `net`, `build`, `verify` and `doctor` used to be
-commands here and are now steps inside `install` — `doctor` is `install -n`.
+`deps`, `session`, `boot`, `net`, `build` and `doctor` used to be commands
+here and are now steps inside `install` — `doctor` is `install -n`. `verify`
+is `scripts/rig.sh verify`.
 Typing any of them still tells you where it went. To run one on its own, or to
 undo one, go straight to the script: they are all independently runnable and
 always will be.
 
 Useful flags: `-n`/`--dry-run`, `--yes`, `--apps`, `--debug`/`--release`,
-`--prefix=P`, `--no-deps`, `--no-verify`. `./dev --help` has the rest.
+`--prefix=P`, `--no-deps`. `./dev --help` has the rest.
 
 A user prefix needs no sudo:
 
@@ -198,7 +198,7 @@ independently runnable, and running them directly is the normal way to iterate.
 | `scripts/session.sh` | the login screen and the boot GPU — checks, then asks |
 | `scripts/boot.sh` | kernel flags, the GPU into the initramfs, loader timeout; `initramfs` alone, and `revert` |
 | `scripts/net.sh` | networkd/resolved/iwd, DHCP, and the resolv.conf stub symlink; `revert` undoes it |
-| `scripts/verify.sh` | 24 checks against a headless session — no sudo, no TTY, **no live session** (it kills every compositor it finds) |
+| `scripts/rig.sh` | a private session beside the live one (`start window\|headless\|tty`, `env`, `stop`); `verify` runs the session checks in a headless one — no sudo, no TTY, safe mid-session |
 | `scripts/lib/out.sh` | the shared output vocabulary — headers, labels, colour |
 | `scripts/lib/detect.sh` | what this machine is: init, seat backend, packaging, initramfs |
 | `test.sh` | build, install, and run a session on the primary TTY |

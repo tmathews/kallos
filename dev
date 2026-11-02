@@ -33,7 +33,8 @@
 #   scripts/install.sh  copy the binaries into $PREFIX — only ever copies
 #   scripts/session.sh  the login screen + the boot GPU
 #   scripts/boot.sh     kernel flags, initramfs, loader timeout
-#   scripts/verify.sh   25 checks, no sudo, no TTY
+#   scripts/rig.sh      a private session beside the live one; `verify` runs
+#                       the session checks in it, no sudo, no TTY
 #
 # Two of those undo themselves, and `./dev` has no verb for it on purpose —
 # reverting is rare, deliberate, and reads better spelled out:
@@ -50,11 +51,11 @@ root="$PWD"
 CFG=release
 APPS=0
 DRY=0
-do_deps=1 do_verify=1
+do_deps=1
 PREFIX="${PREFIX:-/usr/local}"
 
 usage() {
-	sed -n '2,48p' "$0" | sed 's/^# \?//'
+	sed -n '2,/^# Usage:/p' "$0" | sed 's/^# \?//'
 	cat <<'EOF'
 
 Commands
@@ -67,7 +68,6 @@ Commands
                   network      networkd/resolved/iwd, DHCP, the resolver
                   login screen greetd + phylax, and the GPU in the initramfs
                   boot         kernel flags and the loader timeout
-                  verify       25 checks against a headless session
   pull          every submodule to its own origin/main, and this repo to its
                 own. Rebases your unpushed commits onto the new tips and says
                 so; stops with an explanation if a rebase conflicts
@@ -92,7 +92,6 @@ Flags
   --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo
                 and leaves /etc alone, so the login screen is skipped there)
   --no-deps     skip the package step (this is the non-Arch answer)
-  --no-verify   skip the checks at the end
 EOF
 }
 
@@ -126,7 +125,6 @@ while [ $# -gt 0 ]; do
 		--release)   CFG=release ;;
 		--prefix=*)  PREFIX="${1#--prefix=}" ;;
 		--no-deps)   do_deps=0 ;;
-		--no-verify) do_verify=0 ;;
 		-n|--dry-run) DRY=1 ;;
 		-h|--help)   usage; exit 0 ;;
 		debug|release) CFG="$1" ;;
@@ -268,30 +266,6 @@ phase_boot() {
 	"$root/scripts/boot.sh" "$(askmode apply)"
 }
 
-phase_verify() {
-	[ "$do_verify" = 1 ] || { hdr "verify"; skip "--no-verify"; return 0; }
-	if [ "$DRY" = 1 ]; then
-		hdr "verify"
-		skip "checked only — the checks are not run"
-		return 0
-	fi
-	# verify.sh claims the real session bus names, so it refuses to run next to
-	# a live session — and being mid-session is the normal case for an update.
-	# Skip rather than fail; it stays available by hand.
-	if pgrep -x kosmos >/dev/null 2>&1; then
-		hdr "verify"
-		skip "a session is running — run scripts/verify.sh $CFG later"
-		return 0
-	fi
-	hdr "verify"
-	# Deliberately not fatal. By this point the build and the copy have already
-	# succeeded, and aborting would suggest they hadn't. The session checks are
-	# timing-sensitive on a cold cache — a first run on a new machine can lose
-	# the overlay-spawn race — so report it and let the exit status carry the
-	# bad news rather than swallowing the rest of the run.
-	"$root/scripts/verify.sh" "$CFG"
-}
-
 # What every phase below assumes: the tools, and a way to reach GitHub. Cheap,
 # and it turns three different confusing failures further down into one clear
 # one here.
@@ -344,7 +318,6 @@ cmd_install() {
 	step network    phase_net
 	step "login screen" phase_session
 	step boot       phase_boot
-	step verify     phase_verify
 
 	hdr "done"
 	if [ "$DRY" = 1 ]; then
@@ -388,7 +361,7 @@ case "$sub" in
 	doctor)
 		err "doctor is now ./dev install -n — check everything, change nothing"; exit 2 ;;
 	build)   err "build is part of ./dev install now (or: scripts/build.sh $CFG)"; exit 2 ;;
-	verify)  err "verify is part of ./dev install now (or: scripts/verify.sh $CFG)"; exit 2 ;;
+	verify)  err "verify is scripts/rig.sh verify $CFG now — it runs beside a live session"; exit 2 ;;
 	pin)     err "pin is gone — ./dev push pins, commits and publishes in one go"; exit 2 ;;
 	*) err "unknown command: $sub (try --help)"; exit 2 ;;
 esac
