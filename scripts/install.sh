@@ -141,6 +141,21 @@ elif ! have_systemd; then
 	skip "greetd systemd drop-in — this machine runs $(init_system)"
 	note "it only sets greetd's restart budget and its ordering after seatd"
 fi
+# udev: let the seat's user safely remove an external GPU (Settings > Displays >
+# Disconnect writes the card's sysfs `remove`). See the rule's comment. udev
+# reads /etc/udev/rules.d whichever init runs it, so there's no systemd test.
+udevdir="$destdir/etc/udev/rules.d"
+if [ -n "$destdir" ] || [ -w /etc/udev/rules.d ]; then
+	install -d "$udevdir"
+	src="$root/kallosd/data/udev/70-kallos-egpu.rules"
+	[ -n "$destdir" ] || ! differs "$src" "$udevdir/70-kallos-egpu.rules" ||
+		later "udev has not read the eGPU rule (applies to a card plugged in after)" "sudo udevadm control --reload"
+	install -m644 "$src" "$udevdir/70-kallos-egpu.rules"
+	ok "/etc/udev/rules.d/70-kallos-egpu.rules"
+else
+	warn "/etc/udev/rules.d/70-kallos-egpu.rules not installed (no write access) — eGPU Disconnect can't remove the card"
+	note "sudo install -m644 $root/kallosd/data/udev/70-kallos-egpu.rules /etc/udev/rules.d/"
+fi
 # logind: end the session's processes with the session, so a compositor crash
 # does not leave survivors holding the logind session open and the next login
 # inheriting the dead session's user manager. See the drop-in's comment; the
