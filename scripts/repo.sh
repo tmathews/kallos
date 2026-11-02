@@ -30,7 +30,10 @@
 #   status              a table plus what to do next; fetches, changes nothing
 #   pull                every submodule to its origin/main, root to its own
 #   push                publish submodules, pin them, commit, push the root
-#   sync [--latest]     move each submodule to its recorded pin (what `up` runs)
+#   sync [--latest|--keep-ahead]
+#                       move each submodule to its recorded pin; --keep-ahead
+#                       (what `./dev install` runs) leaves one that is published
+#                       and ahead of its pin where it is
 # Env:
 #   DRY=1               report what would happen; touch nothing
 set -euo pipefail
@@ -618,10 +621,15 @@ cmd_status() {
 }
 
 # ---- sync -----------------------------------------------------------------
-# Move each submodule TO ITS RECORDED PIN. This is what `./dev install` runs and what
-# a fresh clone needs; it is not part of the daily push/pull loop, which always
-# goes to the tips. Kept as its own verb because "give me exactly the
-# combination this repo says works" is a real thing to want after a bad pull.
+# Move each submodule TO ITS RECORDED PIN. This is what a fresh clone needs; it
+# is not part of the daily push/pull loop, which always goes to the tips. Kept
+# as its own verb because "give me exactly the combination this repo says
+# works" is a real thing to want after a bad pull.
+#
+# `./dev install` runs it as --keep-ahead: a submodule already past its pin on
+# published commits — the state `pull` leaves behind — stays where it is. Plain
+# sync would reset it back to the pin, and the install straight after a pull
+# would build the code from before it.
 sync_one() {
 	local m=$1 mode=$2 rem target head n
 
@@ -686,6 +694,15 @@ sync_one() {
 		return
 	fi
 
+	# Ahead of the pin, every commit of it published: the tip a pull brought
+	# in, which ./dev push will record. Moving it back is --keep-ahead's to
+	# refuse.
+	if [ "$mode" = keep ] && [ "$head" != "$target" ] && on_main "$m" &&
+	   is_anc "$m" "$target" "$head"; then
+		r_ok "$m" "${dim}${head:0:8}${off} ${ylw}($(count "$m" "$target..$head") ahead of the pin — ./dev push records it)${off}"
+		return
+	fi
+
 	# Clean, and nothing local-only exists on HEAD or main. `switch -C` is safe
 	# *because* of that, and it handles both directions with one command: a
 	# fresh `--init` leaves HEAD detached at the pin while local `main` sits at
@@ -709,9 +726,12 @@ sync_one() {
 
 cmd_sync() {
 	local mode=pin
-	[ "${1-}" = --latest ] && mode=latest
+	case "${1-}" in
+		--latest) mode=latest ;;
+		--keep-ahead) mode=keep ;;
+	esac
 	# Not ${DRY:+...}: DRY=0 is set-and-non-empty, so that would always fire.
-	hdr "submodules — $mode$([ "${DRY:-0}" = 1 ] && echo " (dry run)")"
+	hdr "submodules — $([ "$mode" = keep ] && echo "pin, or ahead of it" || echo "$mode")$([ "${DRY:-0}" = 1 ] && echo " (dry run)")"
 	guard_branches || return 1
 	for m in "${mods[@]}"; do sync_one "$m" "$mode"; done
 	[ "$bad" -eq 0 ] || act "attention needed in $(plural "$bad" submodule) — see above"

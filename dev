@@ -179,9 +179,10 @@ phase_net() {
 # The submodules — BEFORE the packages, because deps.sh's muon bootstrap
 # delegates to kosmos/scripts/muon-bootstrap.sh and dies with "sync the
 # submodules first" if that tree is not there yet. A plain `git clone` with no
-# --recursive is exactly that machine.
+# --recursive is exactly that machine. --keep-ahead because the usual way here is
+# straight from `./dev pull`, whose tips are what this install should build.
 phase_sync() {
-	"$root/scripts/repo.sh" sync
+	"$root/scripts/repo.sh" sync --keep-ahead
 }
 
 phase_deps() {
@@ -228,10 +229,12 @@ phase_binaries() {
 	fi
 	# A system prefix needs root; a user prefix (or a DESTDIR stage) does not.
 	# Only the copy runs privileged — never the build above it.
+	# Its follow-ups (a daemon-reload, a logind restart) come back through
+	# KALLOS_PENDING for the summary, rather than mid-copy.
 	if [ -w "$PREFIX" ] || [ -n "${DESTDIR:-}" ]; then
-		APPS="$APPS" PREFIX="$PREFIX" "$root/scripts/install.sh" "$CFG"
+		APPS="$APPS" PREFIX="$PREFIX" KALLOS_PENDING="$pending" "$root/scripts/install.sh" "$CFG"
 	else
-		sudo APPS="$APPS" PREFIX="$PREFIX" "$root/scripts/install.sh" "$CFG"
+		sudo APPS="$APPS" PREFIX="$PREFIX" KALLOS_PENDING="$pending" "$root/scripts/install.sh" "$CFG"
 	fi
 }
 
@@ -266,9 +269,10 @@ phase_boot() {
 	"$root/scripts/boot.sh" "$(askmode apply)"
 }
 
-# What every phase below assumes: the tools, and a way to reach GitHub. Cheap,
-# and it turns three different confusing failures further down into one clear
-# one here.
+# What every phase below assumes: the tools. Cheap, and it turns several
+# confusing failures further down into one clear one here. Reaching GitHub is
+# not checked: the submodules step fetches first thing and says plainly when it
+# cannot, and a pin already on disk needs no network at all.
 phase_preflight() {
 	hdr "preflight"
 	local t bad=0
@@ -287,22 +291,37 @@ phase_preflight() {
 	else
 		row_red MISS submodules "this tree is not a superproject yet"
 	fi
-	# Probe the transport, not a particular repo: the superproject's own remote
-	# may legitimately not exist yet, and `ls-remote` on a missing repo fails
-	# identically to a missing key. `ssh -T git@github.com` exits 1 even on
-	# success, so match the greeting instead of the status — and swallow that
-	# exit inside the pipeline, or `set -o pipefail` reports it as a failure.
-	if { ssh -o BatchMode=yes -o ConnectTimeout=5 -T git@github.com 2>&1 || true; } |
-		grep -q 'successfully authenticated'; then
-		row_grn OK github "ssh authenticates"
-	else
-		row_ylw WARN github "git@github.com did not authenticate (ssh key? network?)"
-	fi
 	command -v git >/dev/null || die "git is the one tool that has to be there already"
 	return 0
 }
 
+# The follow-ups scripts/install.sh hands back: "<what>\t<command>" per line.
+# In a private directory, not a bare /tmp file: install.sh may be root by then,
+# and fs.protected_regular stops root opening another user's file in a sticky
+# world-writable dir.
+pending=""
+
+# The installed binaries the user's own live processes are still running the
+# previous copy of. The copy replaces files, not processes, so a session that
+# was up during the install keeps the old build until it is restarted — and
+# testing the new code on it is a confusing way to find that out.
+stale_running() {
+	local c p bins=(kosmos kallosd hajime phylax)
+	[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library)
+	for c in "${bins[@]}"; do
+		for p in $(pgrep -x -u "$(id -u)" "$c" || true); do
+			if [ "$(readlink "/proc/$p/exe" 2>/dev/null)" = "$PREFIX/bin/$c (deleted)" ]; then
+				echo "$c"
+				break
+			fi
+		done
+	done
+}
+
 cmd_install() {
+	pending_dir=$(mktemp -d)
+	pending="$pending_dir/pending"
+	trap 'rm -rf "$pending_dir"' EXIT
 	# The tree first, then the machine. Inside each half the order is forced:
 	# the submodules have to exist before deps.sh can bootstrap muon out of
 	# kosmos/, the binaries have to be on PATH before the login screen can name
@@ -324,12 +343,25 @@ cmd_install() {
 		note "checked only — nothing was changed. Drop -n to act on the above."
 		return 0
 	fi
+	local what cmd stale
+	if [ -s "$pending" ]; then
+		while IFS=$'\t' read -r what cmd; do
+			todo "$what"
+			note "run: $cmd"
+		done < "$pending"
+	fi
+	if [ -z "${DESTDIR:-}" ]; then
+		stale=$(stale_running | paste -sd' ')
+		if [ -n "$stale" ]; then
+			pend "your session is still running the previous ${stale// /, }"
+			note "log out and back in to pick up the new build"
+		fi
+	fi
 	if [ "${#undone[@]}" -gt 0 ]; then
 		warn "not done: ${undone[*]}"
 		note "declined, or reported a problem above. Re-run ./dev install to be"
 		note "offered them again — nothing here is one-shot."
 	fi
-	note "ensure $PREFIX/bin is on PATH, then start a session with ./test.sh"
 	[ "${#undone[@]}" -eq 0 ]
 }
 

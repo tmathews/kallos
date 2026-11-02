@@ -151,10 +151,13 @@ on a detached HEAD, so you can just start editing in one and commit normally.
 ### The pins, and when they matter
 
 `pull` and `push` always go to the tips, so most days the recorded pins are
-just a side effect. They exist for one thing: a fresh clone, and `./dev
-install`, build the exact combination this repo records — not whatever the tips happen to
-be that morning. `./dev sync` puts the submodules back on that combination,
-which is the command to reach for when a pull brought in something broken.
+just a side effect. They exist for one thing: a fresh clone builds the exact
+combination this repo records — not whatever the tips happen to be that
+morning. `./dev install` moves a submodule to its pin too, except one already
+ahead of it on published commits — what a `pull` leaves — so the install after
+a pull builds what it pulled. `./dev sync` puts every submodule back on the
+pins, which is the command to reach for when a pull brought in something
+broken.
 
 ## Commands
 

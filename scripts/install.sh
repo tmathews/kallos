@@ -18,6 +18,8 @@
 #   DESTDIR=/tmp/stage scripts/install.sh   # staged install (packaging)
 #   KWM_SRC=<path>                          # where the compositor tree lives
 #   APPS=1                                  # also install yggdrasil/torrential/renzoku/library
+#   KALLOS_PENDING=<file>                   # append the follow-ups here rather
+#                                           # than printing them (./dev's summary)
 # System prefixes (the default /usr/local) need write access — run under sudo.
 set -euo pipefail
 
@@ -47,6 +49,15 @@ for c in "${crates[@]}"; do
 done
 [ -x "$kosmos_bin" ] || { err "missing $kosmos_bin (the compositor)"; missing=1; }
 [ "$missing" -eq 0 ] || die "build first: scripts/build.sh $cfg"
+
+# What has to happen before a changed file takes effect — a reload, a restart.
+# Only for a file this run actually changed, and said once at the end (or in
+# ./dev's summary) rather than mid-copy, where it scrolled past on every run.
+pending=()
+later() { pending+=("$1	$2"); }
+# Whether $1 differs from what is installed at $2, i.e. whether installing it
+# changes anything.
+differs() { ! cmp -s "$1" "$2"; }
 
 bindir="$destdir$prefix/bin"
 portaldir="$destdir$prefix/share/xdg-desktop-portal"
@@ -81,7 +92,10 @@ ok "share/xdg-desktop-portal/"
 # A running user manager needs `systemctl --user daemon-reload` to see a freshly
 # installed unit; a fresh login picks it up automatically.
 install -d "$systemduserdir"
-install -m644 "$root/kallosd/data/systemd/kallos-session.target" "$systemduserdir/kallos-session.target"
+target_src="$root/kallosd/data/systemd/kallos-session.target"
+[ -n "$destdir" ] || ! differs "$target_src" "$systemduserdir/kallos-session.target" ||
+	later "the user manager has not seen the new kallos-session.target" "systemctl --user daemon-reload"
+install -m644 "$target_src" "$systemduserdir/kallos-session.target"
 ok "share/systemd/user/kallos-session.target"
 
 # PAM service for `phylax --lock`. Under /etc, never $prefix: PAM reads only
@@ -118,9 +132,11 @@ ok "bin/phylax-greeter"
 greetd_dropin="$destdir/etc/systemd/system/greetd.service.d"
 if [ -n "$destdir" ] || { have_systemd && [ -w /etc/systemd/system ]; }; then
 	install -d "$greetd_dropin"
-	install -m644 "$root/phylax/data/systemd/greetd-kallos.conf" "$greetd_dropin/kallos.conf"
+	src="$root/phylax/data/systemd/greetd-kallos.conf"
+	[ -n "$destdir" ] || ! differs "$src" "$greetd_dropin/kallos.conf" ||
+		later "systemd has not seen the new greetd drop-in" "sudo systemctl daemon-reload"
+	install -m644 "$src" "$greetd_dropin/kallos.conf"
 	ok "/etc/systemd/system/greetd.service.d/kallos.conf"
-	[ -n "$destdir" ] || note "systemctl daemon-reload to apply"
 elif ! have_systemd; then
 	skip "greetd systemd drop-in — this machine runs $(init_system)"
 	note "it only sets greetd's restart budget and its ordering after seatd"
@@ -134,9 +150,11 @@ fi
 logind_dropin="$destdir/etc/systemd/logind.conf.d"
 if [ -n "$destdir" ] || { have_systemd && [ -w /etc/systemd ]; }; then
 	install -d "$logind_dropin"
-	install -m644 "$root/kallosd/data/systemd/logind-kallos.conf" "$logind_dropin/kallos.conf"
+	src="$root/kallosd/data/systemd/logind-kallos.conf"
+	[ -n "$destdir" ] || ! differs "$src" "$logind_dropin/kallos.conf" ||
+		later "logind has not read the new drop-in" "sudo systemctl restart systemd-logind"
+	install -m644 "$src" "$logind_dropin/kallos.conf"
 	ok "/etc/systemd/logind.conf.d/kallos.conf"
-	[ -n "$destdir" ] || note "systemctl restart systemd-logind to apply"
 elif ! have_systemd; then
 	skip "logind drop-in — this machine runs $(init_system)"
 	note "it ends the session's processes with the session; find your init's equivalent"
@@ -160,6 +178,15 @@ elif [ -d "$destdir/etc/greetd" ] && [ -w "$destdir/etc/greetd" ] || [ -n "$dest
 	ok "/etc/greetd/config.toml"
 else
 	warn "/etc/greetd/config.toml not installed (greetd absent, or no write access)"
+fi
+
+if [ "${#pending[@]}" -gt 0 ]; then
+	if [ -n "${KALLOS_PENDING:-}" ]; then
+		printf '%s\n' "${pending[@]}" >> "$KALLOS_PENDING"
+	else
+		sec "to apply"
+		for p in "${pending[@]}"; do todo "${p%%	*}"; note "run: ${p#*	}"; done
+	fi
 fi
 
 act "done — ensure $prefix/bin is on PATH"
