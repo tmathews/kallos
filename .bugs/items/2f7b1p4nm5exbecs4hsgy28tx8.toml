@@ -1,4 +1,5 @@
-id = 3
+id = "2f7b1p4nm5exbecs4hsgy28tx8"
+legacy_id = 3
 kind = "todo"
 title = "Captive portal login page has no route into the desktop"
 description = """

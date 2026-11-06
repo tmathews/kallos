@@ -1,4 +1,5 @@
-id = 8
+id = "9w2wrs8jq5ec39panjcmdykvzm"
+legacy_id = 8
 kind = "todo"
 title = "[kallos-lib] Pick buffer: exact hit-testing for shapes that are not described by hand"
 description = """

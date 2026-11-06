@@ -1,4 +1,5 @@
-id = 5
+id = "0mz046wsj5fbka8qz5j9sbby9r"
+legacy_id = 5
 kind = "todo"
 title = "verify.sh's last check still asserts that a compositor death ends the session"
 description = """

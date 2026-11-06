@@ -1,4 +1,5 @@
-id = 2
+id = "ag05zyjc1s8h78hh3vhqbhnver"
+legacy_id = 2
 kind = "bug"
 title = "Cannot go back after entering username, stuck on password"
 description = ""

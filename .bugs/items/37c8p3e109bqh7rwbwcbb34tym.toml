@@ -1,4 +1,5 @@
-id = 4
+id = "37c8p3e109bqh7rwbwcbb34tym"
+legacy_id = 4
 kind = "bug"
 title = "Crash recovery leaves a poisoned systemd user session behind"
 description = """
