@@ -8,6 +8,11 @@
 #   ./dev push      publish all the work and record it here, in one commit
 #   ./dev status    where everything is, and which of the above to run
 #
+# and two more for work that spans submodules:
+#
+#   ./dev switch    move the tree onto a feature branch, or back to main
+#   ./dev land      merge the feature into main everywhere, in one commit
+#
 # `install` is the whole machine, not just a file copy: system packages, the
 # network stack, the submodules, the build, the binaries, the login screen and
 # the boot configuration. Every one of those is CHECKED first and only then
@@ -76,13 +81,26 @@ Commands
                 those submodules' own logs. Refuses to run if anything is
                 uncommitted or off main
   status        where everything is, and which of the above to run
+  switch [<feature> [<submodule>...]]
+                move the tree to a feature: the root and every submodule that
+                has a branch of that name go onto it, the rest onto main.
+                Naming submodules starts the feature in them (from main) or
+                adds them to it; `switch main` goes back; no argument lists the
+                features. Refuses if anything is uncommitted. On a feature,
+                pull rebases each feature branch onto its origin/main and push
+                publishes the feature branches (forced, with a lease) and pins
+                them on the root's feature branch
+  land          finish the current feature: each submodule's main fast-forwards
+                to it and is pushed, the root records them in one merge commit
+                ("land foo: kosmos +3, ..."), and the feature branches are
+                deleted here and on the remotes. Run pull first
   sync          put the submodules back on the pins this repo records — the
                 combination known to work together, as opposed to the tips.
                 What to reach for when a pull brought in something broken
 
 Flags
   -n, --dry-run check everything and change nothing — what `doctor` used to be.
-                Also reports what pull/push/sync would do
+                Also reports what pull/push/sync/switch/land would do
   --yes         answer yes to every offer. Includes the boot configuration,
                 which edits /etc and /boot and needs a reboot — say it on
                 purpose
@@ -372,6 +390,8 @@ case "$sub" in
 	push)    "$root/scripts/repo.sh" push ;;
 	status)  "$root/scripts/repo.sh" status ;;
 	sync)    "$root/scripts/repo.sh" sync "${args[@]+"${args[@]}"}" ;;
+	switch)  "$root/scripts/repo.sh" switch "${args[@]+"${args[@]}"}" ;;
+	land)    "$root/scripts/repo.sh" land ;;
 	help)    usage ;;
 	# The commands that folded into `install`. Worth naming rather than falling
 	# through to "unknown": they were real last week, and somebody typing one

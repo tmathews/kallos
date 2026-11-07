@@ -133,9 +133,10 @@ phylax  40affb1f..3dfd25ca  1 commit
 One submodule with one commit gets that commit's subject as the subject line —
 `pin phylax +1` says strictly less than what it is pinning.
 
-Both verbs stop before touching anything if a submodule is **not on `main`**.
-This tree tracks main and only main, and guessing what to do with a branch
-somebody is in the middle of is how work gets lost. `push` also stops on
+Both verbs stop before touching anything if a submodule is **not on the branch
+it should be on** — `main`, or the current feature's branch if it has one (see
+below). Guessing what to do with a branch somebody is in the middle of is how
+work gets lost. `push` also stops on
 **uncommitted changes**, anywhere — publishing a pin that silently excludes the
 edit you were in the middle of is the exact surprise this exists to prevent.
 `pull` reports them and carries on, because bringing in new code does not
@@ -147,6 +148,49 @@ tips, which is what "work on latest main" means — and the next `push` lands.
 
 Submodules are always left on a real local `main` with upstream tracking, never
 on a detached HEAD, so you can just start editing in one and commit normally.
+
+### Features
+
+Work that spans several submodules gets one branch name across all of them.
+
+```sh
+./dev switch foo kosmos kallos-lib   # start foo in those two (from main)
+./dev switch foo hajime              # hajime joins it
+./dev switch                         # list features and who is in each
+./dev switch main                    # back to main everywhere
+./dev switch foo                     # back onto foo — on any machine
+./dev land                           # finish it
+```
+
+**The branch is the record.** A submodule is in `foo` exactly when it has a
+branch called `foo`; the root's own branch is the current feature. Switching
+puts every submodule that has a `foo` on it and every other one on `main`, and
+it refuses over uncommitted work. A submodule that already had a `foo` branch
+you did not name joins the feature, with a warning.
+
+On a feature, `pull` and `push` keep working the same way. `pull` takes in what
+another machine pushed to `foo`, then rebases each feature branch onto its
+`origin/main`. `push` publishes the feature branches and pins them on the
+root's `foo`, never touching `main`. Because the branches are rebased, they are
+pushed with `--force-with-lease`, the lease being the exact remote tip this
+machine pulled in. A push from another machine you never pulled is therefore
+refused, not overwritten.
+
+`land` needs a `pull` first, so every feature branch holds `origin/main`. Then
+it is all fast-forwards: each submodule's `main` moves to its `foo` and is
+pushed, the root gets one merge commit, and the `foo` branches are deleted here
+and on the remotes:
+
+```
+land foo: kosmos +3, kallos-lib +2
+```
+
+Another machine still on `foo` finds the branch gone: `pull` and `push` say so
+and stop, and `./dev switch main` there deletes the local `foo` branches whose
+work is already in `main`. It keeps any that are not.
+
+`kallos-lib` is a path dependency of every Rust binary, so with it in a
+feature everything builds against the feature's copy. `status` says so.
 
 ### The pins, and when they matter
 
@@ -161,13 +205,15 @@ broken.
 
 ## Commands
 
-Four, and a fifth for when a pull goes wrong.
+Four, two for features, and one more for when a pull goes wrong.
 
 ```
 ./dev [install]     the whole machine: check every step, offer to fix it, build
 ./dev pull          everything to its latest main
 ./dev push          publish all work, pin it, commit it, push it
 ./dev status        where everything is, and what to run next
+./dev switch        move the tree onto a feature branch, or back to main
+./dev land          merge the current feature into main everywhere
 ./dev sync          put the submodules back on the pins this repo records
 ```
 
