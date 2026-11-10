@@ -38,3 +38,6 @@
 	path = library
 	url = git@github.com:tmathews/bunko.git
 	branch = main
+[submodule "sentinel"]
+	path = sentinel
+	url = git@github.com:tmathews/sentinel.git

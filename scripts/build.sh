@@ -47,10 +47,10 @@ crates=(kallosd kallosctl hajime phylax)
 # them here is all it takes; install.sh appends the same four.
 [ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku library) || true
 
-# sentinel, the assistant, is an app too, but not yet a submodule (it has no
-# remote): a clone has it only if it was put beside the others by hand. So it
-# is built when its tree is here and skipped, saying so, when it is not.
-# install.sh makes the same check.
+# sentinel, the assistant, is an app too. It became a submodule after the
+# others, so a checkout from before then may not have it: it is built when its
+# tree is here and skipped, saying how to get it, when it is not. install.sh
+# makes the same check.
 if [ "${APPS:-0}" = 1 ]; then
 	if [ -f "$root/sentinel/Cargo.toml" ]; then
 		crates+=(sentinel)
@@ -61,7 +61,7 @@ fi
 
 hdr "build — $CFG${APPS:+, with apps}"
 
-[ "${sentinel_absent:-0}" = 1 ] && skip "sentinel (no tree at $root/sentinel; it is not a submodule yet)"
+[ "${sentinel_absent:-0}" = 1 ] && skip "sentinel (not checked out: git submodule update --init sentinel)"
 
 # ---- kosmos (C, via its own muon build) --------------------------------------
 # Builds the compositor and its eight synthetic test clients.

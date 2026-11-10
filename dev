@@ -105,7 +105,7 @@ Flags
                 which edits /etc and /boot and needs a reboot — say it on
                 purpose
   --apps        also build/install yggdrasil, torrential, renzoku and library,
-                and sentinel (the assistant) when sentinel/ is present
+                and sentinel (the assistant)
   --debug       build the debug config (default: release)
   --release     build the release config
   --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo

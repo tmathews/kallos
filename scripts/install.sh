@@ -43,8 +43,8 @@ crates=(kallosd kallosctl hajime phylax)
 # and shaders are include_bytes!'d, and none of them ships a .desktop file.
 [ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku library) || true
 
-# sentinel, the assistant: an app under APPS=1 when its tree is here (it is
-# not a submodule yet; see scripts/build.sh). Besides its binary it brings a
+# sentinel, the assistant: an app under APPS=1 when its tree is here (see
+# scripts/build.sh). Besides its binary it brings a
 # systemd user unit, installed below and never enabled here: whether the
 # assistant runs is the user's choice, and it needs its settings first.
 sentinel=0

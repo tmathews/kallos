@@ -3,7 +3,3 @@
 # kbrowser has no git remote at all yet. It can become a submodule once it is
 # pushed somewhere.
 /kbrowser/
-
-# sentinel has no remote yet either; it becomes an opt-in submodule once it
-# has one.
-/sentinel/
