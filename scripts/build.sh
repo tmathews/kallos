@@ -23,7 +23,8 @@
 # Usage: scripts/build.sh [debug|release]   (default: debug)
 #   KWM_SRC=<path>   where the compositor tree lives (default: ./kosmos)
 #   KWM=0            skip the compositor (Rust-only build)
-#   APPS=1           also build yggdrasil, torrential, renzoku and library
+#   APPS=1           also build yggdrasil, torrential, renzoku and library, and
+#                    sentinel when its tree is here
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
@@ -46,7 +47,21 @@ crates=(kallosd kallosctl hajime phylax)
 # them here is all it takes; install.sh appends the same four.
 [ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku library) || true
 
+# sentinel, the assistant, is an app too, but not yet a submodule (it has no
+# remote): a clone has it only if it was put beside the others by hand. So it
+# is built when its tree is here and skipped, saying so, when it is not.
+# install.sh makes the same check.
+if [ "${APPS:-0}" = 1 ]; then
+	if [ -f "$root/sentinel/Cargo.toml" ]; then
+		crates+=(sentinel)
+	else
+		sentinel_absent=1
+	fi
+fi
+
 hdr "build — $CFG${APPS:+, with apps}"
+
+[ "${sentinel_absent:-0}" = 1 ] && skip "sentinel (no tree at $root/sentinel; it is not a submodule yet)"
 
 # ---- kosmos (C, via its own muon build) --------------------------------------
 # Builds the compositor and its eight synthetic test clients.

@@ -104,7 +104,8 @@ Flags
   --yes         answer yes to every offer. Includes the boot configuration,
                 which edits /etc and /boot and needs a reboot — say it on
                 purpose
-  --apps        also build/install yggdrasil, torrential, renzoku and library
+  --apps        also build/install yggdrasil, torrential, renzoku and library,
+                and sentinel (the assistant) when sentinel/ is present
   --debug       build the debug config (default: release)
   --release     build the release config
   --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo

@@ -93,6 +93,7 @@ binaries declare `kallos = { path = "../kallos-lib" }`.
 | `kallos-lib/` | the `kallos` crate the Rust binaries share |
 | `yggdrasil/` `torrential/` `renzoku/` | apps — opt-in, `--apps` |
 | `library/` | the media library and launcher (working name; repo `bunko`) — opt-in, `--apps` |
+| `sentinel/` | the assistant — opt-in, `--apps`; not a submodule until it has a remote, so built only when present |
 
 `kbrowser/` is **not** a submodule — it has no remote yet. Clone it alongside
 if you want it; the root ignores it.

@@ -17,7 +17,8 @@
 #   PREFIX=$HOME/.local scripts/install.sh  # user prefix (no sudo)
 #   DESTDIR=/tmp/stage scripts/install.sh   # staged install (packaging)
 #   KWM_SRC=<path>                          # where the compositor tree lives
-#   APPS=1                                  # also install yggdrasil/torrential/renzoku/library
+#   APPS=1                                  # also install yggdrasil/torrential/renzoku/library,
+#                                           # and sentinel when its tree is here
 #   KALLOS_PENDING=<file>                   # append the follow-ups here rather
 #                                           # than printing them (./dev's summary)
 # System prefixes (the default /usr/local) need write access — run under sudo.
@@ -41,6 +42,13 @@ crates=(kallosd kallosctl hajime phylax)
 # never asked for. They install as plain binaries and nothing else: their icons
 # and shaders are include_bytes!'d, and none of them ships a .desktop file.
 [ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku library) || true
+
+# sentinel, the assistant: an app under APPS=1 when its tree is here (it is
+# not a submodule yet; see scripts/build.sh). Besides its binary it brings a
+# systemd user unit, installed below and never enabled here: whether the
+# assistant runs is the user's choice, and it needs its settings first.
+sentinel=0
+[ "${APPS:-0}" = 1 ] && [ -f "$root/sentinel/Cargo.toml" ] && { crates+=(sentinel); sentinel=1; } || true
 
 # Pre-flight: everything must already be built.
 missing=0
@@ -97,6 +105,30 @@ target_src="$root/kallosd/data/systemd/kallos-session.target"
 	later "the user manager has not seen the new kallos-session.target" "systemctl --user daemon-reload"
 install -m644 "$target_src" "$systemduserdir/kallos-session.target"
 ok "share/systemd/user/kallos-session.target"
+
+# sentinel's user unit, pointing at the binary just installed. Not enabled:
+# the follow-up says how, once settings exist.
+if [ "$sentinel" = 1 ]; then
+	unit="$systemduserdir/sentinel.service"
+	tmp=$(mktemp)
+	sed "s|^ExecStart=.*|ExecStart=$prefix/bin/sentinel serve|" "$root/sentinel/config/sentinel.service" >"$tmp"
+	if [ -z "$destdir" ] && differs "$tmp" "$unit"; then
+		# One command for a first install and an update alike: restart
+		# starts it if it was not running. Settings come first, though.
+		later "sentinel runs once enabled, with your Gemini key in ~/.config/kallos/sentinel/settings.toml (example: $root/sentinel/config/settings.toml)" \
+			"systemctl --user daemon-reload && systemctl --user enable sentinel && systemctl --user restart sentinel"
+	fi
+	install -m644 "$tmp" "$unit"
+	rm -f "$tmp"
+	ok "share/systemd/user/sentinel.service"
+	# A unit of the user's own in ~/.config/systemd/user wins over this one.
+	# Under sudo, ~ is root's: look in the invoking user's home instead.
+	user_home=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
+	if [ -z "$destdir" ] && [ -n "$user_home" ] && [ -e "$user_home/.config/systemd/user/sentinel.service" ]; then
+		warn "$user_home/.config/systemd/user/sentinel.service overrides the unit just installed"
+		note "remove it to run $prefix/bin/sentinel: rm ~/.config/systemd/user/sentinel.service"
+	fi
+fi
 
 # PAM service for `phylax --lock`. Under /etc, never $prefix: PAM reads only
 # /etc/pam.d, so a user-prefix install cannot place it and says so — the
