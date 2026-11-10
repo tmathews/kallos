@@ -55,6 +55,7 @@ missing=0
 for c in "${crates[@]}"; do
 	[ -x "$root/$c/target/$cfg/$c" ] || { err "missing $root/$c/target/$cfg/$c"; missing=1; }
 done
+[ "$sentinel" = 0 ] || [ -x "$root/sentinel/target/$cfg/sentinel-act" ] || { err "missing $root/sentinel/target/$cfg/sentinel-act"; missing=1; }
 [ -x "$kosmos_bin" ] || { err "missing $kosmos_bin (the compositor)"; missing=1; }
 [ "$missing" -eq 0 ] || die "build first: scripts/build.sh $cfg"
 
@@ -121,6 +122,26 @@ if [ "$sentinel" = 1 ]; then
 	install -m644 "$tmp" "$unit"
 	rm -f "$tmp"
 	ok "share/systemd/user/sentinel.service"
+
+	# The guarded-actions helper, and the polkit policy that lets it run for
+	# the active local user (no password: the confirmation is the user's /yes
+	# in Sentinel). Only for a root-owned bin directory -- a policy naming a
+	# program the user can rewrite would be a way to root -- and the policy
+	# goes where polkit reads, /usr/share/polkit-1/actions, whatever the
+	# prefix (as PAM's file goes to /etc).
+	install -m755 "$root/sentinel/target/$cfg/sentinel-act" "$bindir/sentinel-act"
+	ok "bin/sentinel-act"
+	polkitdir="$destdir/usr/share/polkit-1/actions"
+	if [ -n "$destdir" ] || { [ "$(stat -c %u "$bindir")" = 0 ] && [ -w "$polkitdir" ]; }; then
+		install -d "$polkitdir"
+		sed "s|@BINDIR@|$prefix/bin|" "$root/sentinel/config/org.kallos.sentinel.policy" >"$polkitdir/org.kallos.sentinel.policy"
+		chmod 644 "$polkitdir/org.kallos.sentinel.policy"
+		ok "/usr/share/polkit-1/actions/org.kallos.sentinel.policy"
+	elif [ "$(stat -c %u "$bindir")" != 0 ]; then
+		skip "sentinel's guarded actions: $bindir is not root's, so no polkit policy (it would be a way to root)"
+	else
+		warn "sentinel's polkit policy not installed (no write access to $polkitdir) -- guarded actions will be refused"
+	fi
 	# A unit of the user's own in ~/.config/systemd/user wins over this one.
 	# Under sudo, ~ is root's: look in the invoking user's home instead.
 	user_home=$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)
