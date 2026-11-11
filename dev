@@ -229,12 +229,17 @@ phase_binaries() {
 	if [ "$DRY" = 1 ]; then
 		hdr "binaries — $CFG -> $PREFIX"
 		local c built inst bins=(kosmos kallosd kallosctl hajime phylax)
+		[ -f "$root/kosmos/rust/kosmos-ng/Cargo.toml" ] && bins+=(kosmos-ng)
 		[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library)
 		for c in "${bins[@]}"; do
-			# kosmos comes out of muon's build tree, the Rust four out of their
-			# own crate target dirs — the same split scripts/install.sh makes.
-			[ "$c" = kosmos ] && built="$root/kosmos/builds/$CFG/src/kosmos" \
-			                  || built="$root/$c/target/$CFG/$c"
+			# kosmos comes out of muon's build tree, kosmos-ng out of kosmos's
+			# cargo workspace, the Rust four out of their own crate target dirs
+			# — the same split scripts/install.sh makes.
+			case "$c" in
+				kosmos) built="$root/kosmos/builds/$CFG/src/kosmos" ;;
+				kosmos-ng) built="$root/kosmos/rust/target/$CFG/kosmos-ng" ;;
+				*) built="$root/$c/target/$CFG/$c" ;;
+			esac
 			inst="$PREFIX/bin/$c"
 			if [ ! -x "$inst" ]; then
 				row_ylw TODO "$c" "not installed"
@@ -325,7 +330,7 @@ pending=""
 # was up during the install keeps the old build until it is restarted — and
 # testing the new code on it is a confusing way to find that out.
 stale_running() {
-	local c p bins=(kosmos kallosd hajime phylax)
+	local c p bins=(kosmos kosmos-ng kallosd hajime phylax)
 	[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library)
 	for c in "${bins[@]}"; do
 		for p in $(pgrep -x -u "$(id -u)" "$c" || true); do
