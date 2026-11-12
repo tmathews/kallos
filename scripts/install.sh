@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Kallos — the five binaries plus the data files that are still live.
+# Install Kallos — the five binaries (six with kosmos-ng, the Smithay port) plus the data files that are still live.
 # Nothing else.
 #
 # There is no asset tree under share/kallos: hajime and the apps bake their
@@ -33,6 +33,10 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 . "$root/scripts/lib/detect.sh"
 kosmos_src="${KWM_SRC:-$root/kosmos}"
 kosmos_bin="$kosmos_src/builds/$cfg/src/kosmos"
+# The Smithay port, when the kosmos tree has it (scripts/build.sh builds it).
+kosmos_ng_bin="$kosmos_src/rust/target/$cfg/kosmos-ng"
+kosmos_ng=0
+[ -f "$kosmos_src/rust/kosmos-ng/Cargo.toml" ] && kosmos_ng=1
 
 # name -> built path. The Rust four come from their own crate target dirs.
 crates=(kallosd kallosctl hajime phylax)
@@ -57,6 +61,7 @@ for c in "${crates[@]}"; do
 done
 [ "$sentinel" = 0 ] || [ -x "$root/sentinel/target/$cfg/sentinel-act" ] || { err "missing $root/sentinel/target/$cfg/sentinel-act"; missing=1; }
 [ -x "$kosmos_bin" ] || { err "missing $kosmos_bin (the compositor)"; missing=1; }
+[ "$kosmos_ng" = 0 ] || [ -x "$kosmos_ng_bin" ] || { err "missing $kosmos_ng_bin (the Smithay port)"; missing=1; }
 [ "$missing" -eq 0 ] || die "build first: scripts/build.sh $cfg"
 
 # What has to happen before a changed file takes effect — a reload, a restart.
@@ -82,6 +87,12 @@ hdr "binaries — $cfg -> ${destdir:+$destdir (staged) }$prefix"
 install -d "$bindir"
 install -m755 "$kosmos_bin" "$bindir/kosmos"
 ok "bin/kosmos"
+# kosmos-ng beside it: kallosd runs it when the `compositor` setting says
+# so, and falls back to kosmos if it can't stay up.
+if [ "$kosmos_ng" = 1 ]; then
+	install -m755 "$kosmos_ng_bin" "$bindir/kosmos-ng"
+	ok "bin/kosmos-ng"
+fi
 for c in "${crates[@]}"; do
 	install -m755 "$root/$c/target/$cfg/$c" "$bindir/$c"
 	ok "bin/$c"

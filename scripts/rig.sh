@@ -7,6 +7,9 @@
 #   scripts/rig.sh stop
 #   scripts/rig.sh verify [debug|release]   the session checks, headless
 #
+# RIG_KOSMOS=ng runs any of them on kosmos-ng, the Smithay port
+# (kosmos/docs/smithay-port.md), instead of the C kosmos.
+#
 # window    kosmos opens as a window on the live desktop (the wayland backend,
 #           so the nested modifier is Alt). The rig's kallosd still reads
 #           /dev/input directly, so a gamepad drives it whatever has focus.
@@ -70,6 +73,16 @@ runs() {
 # The pids named $1 that belong to this rig: the comm, and the rig's runtime dir
 # in the environment they were started with. Every child of the rig's kallosd
 # inherits it, and nothing in the live session can have it.
+# The compositor under test: its binary for a config, and its process name.
+wm_bin() {
+	case "${RIG_KOSMOS:-}" in
+		ng) echo "$root/kosmos/rust/target/$1/kosmos-ng" ;;
+		*) echo "$root/kosmos/builds/$1/src/kosmos" ;;
+	esac
+}
+WM=kosmos
+[ "${RIG_KOSMOS:-}" = ng ] && WM=kosmos-ng
+
 rpids() {
 	local p
 	for p in $(pgrep -x "$1" || true); do
@@ -168,7 +181,7 @@ start() {
 		die "tty mode needs a text login on a VT (Ctrl+Alt+F2), not this shell"
 	fi
 	local KD="$root/kallosd/target/$cfg/kallosd"
-	local KOSMOS="$root/kosmos/builds/$cfg/src/kosmos"
+	local KOSMOS; KOSMOS=$(wm_bin "$cfg")
 	local HAJIME="$root/hajime/target/$cfg/hajime"
 	for b in "$KD" "$KOSMOS" "$HAJIME"; do
 		[ -x "$b" ] || die "missing $b — run scripts/build.sh $cfg"
@@ -208,7 +221,7 @@ verify() {
 	local PHYLAX="$root/phylax/target/$cfg/phylax"
 	# The key injector, built only with `cargo build --features devtools`.
 	local PTYPE="$root/phylax/target/$cfg/phylax-type"
-	local KOSMOS="$root/kosmos/builds/$cfg/src/kosmos"
+	local KOSMOS; KOSMOS=$(wm_bin "$cfg")
 	local HCC="$root/kosmos/builds/$cfg/apps/hotcorner-client/hotcorner-client"
 	local DC="$root/kosmos/builds/$cfg/apps/displays-client/displays-client"
 	local b
@@ -235,7 +248,7 @@ verify() {
 	# supervises is not respawned on the way out.
 	reap() {
 		local c p
-		for c in kallosd kosmos hajime phylax; do
+		for c in kallosd "$WM" hajime phylax; do
 			for p in $(rpids "$c"); do kill "$p" 2>/dev/null || true; done
 			for _ in $(seq 1 30); do ralive "$c" || break; sleep 0.1; done
 		done
@@ -518,11 +531,11 @@ verify() {
 	# on_wm_exit. SIGKILL cannot be handled, so it means the same thing before
 	# and after, and this check keeps asking the question it means to ask.
 	local wm0 wm1 ov0 ov1
-	wm0=$(rpid kosmos)
+	wm0=$(rpid "$WM")
 	ov0=$(rpid hajime)
 	[ -n "$wm0" ] && kill -KILL "$wm0" 2>/dev/null || true
 	for _ in $(seq 1 30); do
-		wm1=$(rpid kosmos)
+		wm1=$(rpid "$WM")
 		[ -n "$wm1" ] && [ "$wm1" != "$wm0" ] && break
 		sleep 1
 	done
@@ -557,14 +570,14 @@ verify() {
 	# user.
 	local kills=0 wm new
 	while [ "$kills" -lt 3 ]; do
-		wm=$(rpid kosmos)
+		wm=$(rpid "$WM")
 		[ -n "$wm" ] || break
 		kill -KILL "$wm" 2>/dev/null || true
 		kills=$((kills + 1))
 		# Its replacement, or the daemon giving up — either ends the wait.
 		for _ in $(seq 1 15); do
 			ralive kallosd || break
-			new=$(rpid kosmos)
+			new=$(rpid "$WM")
 			[ -n "$new" ] && [ "$new" != "$wm" ] && break
 			sleep 1
 		done

@@ -73,6 +73,13 @@ elif [ ! -x "$KWM_SRC/scripts/build.sh" ]; then
 else
 	act "building kosmos ($CFG) in $KWM_SRC"
 	"$KWM_SRC/scripts/build.sh" "$BT"
+	# kosmos-ng, the Smithay port (kosmos/docs/smithay-port.md): installed
+	# beside kosmos, run when the `compositor` setting names it. Only in a
+	# kosmos tree that has it.
+	if [ -f "$KWM_SRC/rust/kosmos-ng/Cargo.toml" ]; then
+		act "building kosmos-ng ($CFG)"
+		(cd "$KWM_SRC/rust" && cargo build -p kosmos-ng $([ "$CFG" = release ] && echo --release))
+	fi
 fi
 
 # ---- the Rust suite -------------------------------------------------------

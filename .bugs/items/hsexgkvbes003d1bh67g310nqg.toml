@@ -1,0 +1,21 @@
+id = "hsexgkvbes003d1bh67g310nqg"
+kind = "todo"
+title = "[kallos-lib] Render in linear light suite-wide, as groundwork for HDR"
+description = """
+Decision (2026-11-11, user): Kallos renders future-forward, in linear light, not historically sRGB-value blended. Today kallos-lib (and so hajime, phylax, the apps and kosmos-ng's compositing) blends straight on sRGB-encoded values: out = a*c + (1-a)*b. Linear light decodes first: out = srgb(a*lin(c) + (1-a)*lin(b)). Kept sRGB for now only for uniformity: switch the whole suite together, not the compositor alone.
+
+Visible today: an Alacritty at opacity 0.99 shows its blurred wallpaper on C kosmos (wlroots Vulkan blends linearly: 1% light re-encodes to sRGB ~15-20) and none on kosmos-ng (1-2/255). Pocket button 91 (C) vs 44 (kosmos-ng). Shadows, AA edges, the overview blur crossfade and translucent windows all read darker than linear. See kosmos/docs/smithay-port.md, 2026-11-05 (the original keep-sRGB decision) and 2026-11-11.
+
+Scope:
+- kallos-lib Renderer2d, blur and SDF: blend in linear. Either sRGB image views on targets and textures (the hardware decodes and encodes, one pass, 8-bit), or an FP16 linear working target plus an encode pass (costs memory, but is the HDR-ready shape).
+- Colour inputs: theme/accent/UI colours and premultiplied vertex colours are authored in sRGB and must be converted to linear on the way in. UI tuned against sRGB blending will shift (translucent fills lighter); re-tune by eye.
+- Text: glyph coverage blended in linear looks thinner; apply the usual coverage/contrast compensation.
+- kosmos-ng: client buffers are sRGB-encoded and are decoded on sampling; scanout is encoded per output.
+- Foreign apps are unaffected except where the compositor mixes or resamples their pixels (translucent windows, overview/thumbnail scaling, fractional scale), which becomes correct.
+
+HDR follows from the same working space: an FP16 linear (scRGB-style) composite, per-output transfer (sRGB / PQ) and primaries, then wp_color_management_v1 (kosmos #g026). SDR stays a valid output; sRGB support remains for decoding SDR inputs and encoding SDR outputs, not as a blending mode."""
+author = "Claude Opus 5.5 (1M context) (agent) <noreply@anthropic.com>"
+severity = 3
+state = "open"
+created_at = "2026-11-11T17:46:13.451136637Z"
+updated_at = "2026-11-11T17:46:13.451179107Z"

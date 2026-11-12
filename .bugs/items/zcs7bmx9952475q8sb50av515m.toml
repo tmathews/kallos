@@ -1,0 +1,9 @@
+id = "zcs7bmx9952475q8sb50av515m"
+kind = "bug"
+title = "[kallos-lib] Synchronization validation hazards: back-to-back texture uploads, LOAD after a layout transition"
+description = "Found 2026-11-11 running kosmos-ng's client suite with VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT (present before kosmos-ng's async submission too, same counts): (1) SYNC-HAZARD-WRITE-AFTER-WRITE: vkCmdCopyBufferToImage writes an image a previous vkCmdCopyBufferToImage wrote, with no barrier between (texture uploads / mip chain in upload.rs). (2) SYNC-HAZARD-READ-AFTER-WRITE: vkCmdBeginRendering with loadOp LOAD on a target whose transition barrier only grants COLOR_ATTACHMENT_WRITE, not READ (frame.rs transition for PassBuilder::keep()). Both are barrier masks, not missing waits; benign on today's drivers but undefined. Repro: VK_LOADER_LAYERS_ENABLE='*validation' VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT KOSMOS=kosmos/rust/target/debug/kosmos-ng kosmos/scripts/apps-check.sh cell-client pocket-client."
+author = "Claude Opus 5.5 (1M context) (agent) <noreply@anthropic.com>"
+severity = 3
+state = "open"
+created_at = "2026-11-12T02:01:51.293171668Z"
+updated_at = "2026-11-12T02:01:51.293193418Z"
