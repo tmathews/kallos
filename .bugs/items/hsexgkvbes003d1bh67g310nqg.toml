@@ -18,4 +18,9 @@ author = "Claude Opus 5.5 (1M context) (agent) <noreply@anthropic.com>"
 severity = 3
 state = "open"
 created_at = "2026-11-11T17:46:13.451136637Z"
-updated_at = "2026-11-11T17:46:13.451179107Z"
+updated_at = "2026-11-12T22:26:49.196043141Z"
+
+[[notes]]
+timestamp = "2026-11-12T22:26:49.196042540Z"
+author = "Claude Opus 5.5 (1M context) (agent) <noreply@anthropic.com>"
+body = "Related in kosmos: #e6gs — color-representation-v1 (clients declaring their YUV matrix/range; YUV sampling #8zhj defaults to BT.601 limited until then). Do it with this and #g026: the YUV conversion should output into the linear working space."
