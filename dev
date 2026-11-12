@@ -57,6 +57,7 @@ CFG=release
 APPS=0
 DRY=0
 do_deps=1
+LOGS=()
 PREFIX="${PREFIX:-/usr/local}"
 
 usage() {
@@ -111,6 +112,14 @@ Flags
   --prefix=P    install prefix (default /usr/local; a user prefix needs no sudo
                 and leaves /etc alone, so the login screen is skipped there)
   --no-deps     skip the package step (this is the non-Arch answer)
+  --log=SPEC    persistent log levels, written to ~/.config/kallos/log (read
+                by every program at start; also pushed live to a running
+                session). Repeat it for several programs; together they
+                replace the file:
+                  --log=kosmos:Plane=debug,Capture=debug   one program
+                  --log=debug                              every program
+                  --log=off                                back to the defaults
+                Without --log the file is left alone and reported
 EOF
 }
 
@@ -144,6 +153,7 @@ while [ $# -gt 0 ]; do
 		--release)   CFG=release ;;
 		--prefix=*)  PREFIX="${1#--prefix=}" ;;
 		--no-deps)   do_deps=0 ;;
+		--log=*)     LOGS+=("${1#--log=}") ;;
 		-n|--dry-run) DRY=1 ;;
 		-h|--help)   usage; exit 0 ;;
 		debug|release) CFG="$1" ;;
@@ -342,6 +352,61 @@ stale_running() {
 	done
 }
 
+# ---- logging --------------------------------------------------------------
+# ~/.config/kallos/log: `program: spec` lines (`*` for all), read by
+# kallos-lib's log::init in every program — kallos-lib/src/log.rs.
+log_file="${XDG_CONFIG_HOME:-$HOME/.config}/kallos/log"
+
+phase_log() {
+	hdr "logging — $log_file"
+	if [ "${#LOGS[@]}" -eq 0 ]; then
+		if [ -s "$log_file" ] && grep -q '^[^#]*:' "$log_file"; then
+			grep '^[^#]*:' "$log_file" | while IFS= read -r l; do ok "$l"; done
+			note "change with --log=…, clear with --log=off"
+		else
+			ok "defaults (info) — --log=prog:Category=debug to raise one"
+		fi
+		return 0
+	fi
+	local lines=() v who spec
+	for v in "${LOGS[@]}"; do
+		case "$v" in
+			off|none|default) lines=(); continue ;;
+			*:*) who="${v%%:*}"; spec="${v#*:}" ;;
+			*)   who="*"; spec="$v" ;;
+		esac
+		lines+=("$who: $spec")
+	done
+	if [ "$DRY" = 1 ]; then
+		[ "${#lines[@]}" -eq 0 ] && todo "would remove $log_file" || for v in "${lines[@]}"; do todo "would write: $v"; done
+		return 0
+	fi
+	if [ "${#lines[@]}" -eq 0 ]; then
+		rm -f "$log_file"
+		ok "removed: every program at its defaults from its next start"
+	else
+		mkdir -p "$(dirname "$log_file")"
+		{
+			echo "# Log levels per program, read at start (kallos-lib/src/log.rs)."
+			echo "# Written by ./dev install --log=…; KALLOS_LOG applies on top."
+			printf '%s\n' "${lines[@]}"
+		} > "$log_file"
+		for v in "${lines[@]}"; do ok "$v"; done
+	fi
+	# A running session takes it now too (kallosctl log level), so nobody
+	# has to log out to see a debug category; quiet when there is none.
+	if command -v kallosctl >/dev/null && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+		if [ "${#lines[@]}" -eq 0 ]; then
+			kallosctl log level '*' default >/dev/null 2>&1 && note "pushed to the running session: back to each program's start-up levels"
+		else
+			for v in "${lines[@]}"; do
+				who="${v%%:*}"; spec="${v#*: }"
+				kallosctl log level "$who" "$spec" >/dev/null 2>&1 && note "pushed live: $who $spec"
+			done
+		fi
+	fi
+}
+
 cmd_install() {
 	pending_dir=$(mktemp -d)
 	pending="$pending_dir/pending"
@@ -358,6 +423,7 @@ cmd_install() {
 	# on past a failure here only buys a second and stranger error message.
 	phase_build
 	phase_binaries
+	phase_log
 	step network    phase_net
 	step "login screen" phase_session
 	step boot       phase_boot
