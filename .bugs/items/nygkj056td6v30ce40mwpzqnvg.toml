@@ -1,0 +1,27 @@
+id = "nygkj056td6v30ce40mwpzqnvg"
+kind = "bug"
+title = "[kallos-lib] Config files disagree on '#': input strips it mid-line, displays and settings don't"
+description = """
+What happened (2026-11-13): Settings > Touchpad > TABLET couldn't map the tablet to the AW3423DW. Its EDID serial is '#GrMYMxgwABUP', so kosmos's name for it is 'Dell Inc. Dell AW3423DW #GrMYMxgwABUP'. The input file (kallos-lib config/input.rs split_line) treats '#' ANYWHERE as a comment start, so 'tablet.map = output <that name>' can't be stored; kallosd refused it and hajime's Input::set only logged. Patched at the edge (TabletMap::output_of cuts the name before '#'; kallos-lib 888770f, hajime 19269b3). The format rule is unchanged.
+
+The real problem: the suite's line formats don't agree.
+- input (config/input.rs): '#' anywhere starts a comment; set_in also keeps everything from the first '#' as the line's comment.
+- displays (config/displays.rs parse): only a line STARTING with '#' is a comment. kallosd's 'mode save' writes full monitor names, so 'display Dell Inc. Dell AW3423DW #GrMYMxgwABUP' is valid there today.
+- settings/appearance (config/settings.rs key_values): only a key starting with '#' is skipped; values may hold '#' (accent '#88c0d0').
+So one monitor name is legal in one file and not the next, and a value copied from 'kallosctl display' or a displays block is refused or cut short depending on where it goes.
+
+Where it can bite next:
+- any future key holding a monitor name, app id, window title, path or colour, if it lands in a mid-line-comment format;
+- a hand edit copying a name between files;
+- input.rs set_in: a rewritten line keeps everything from the first '#' as 'the comment', so a stored value with '#' would split if that format ever allowed one.
+
+Options (one rule suite-wide, in kallos-lib):
+1. Whole-line comments only, everywhere (displays and settings already; change input). Simplest. Trailing comments in input files stop working, so check examples/config and users' files for 'key = value  # note'.
+2. Trailing comments only after whitespace + '#'. 'x#y' survives, but the AW's ' #Gr...' still gets cut.
+3. Quoting or escaping values. Most general, most surface.
+Option 1 matches two of the three formats and the 'one way to write it' preference. Either way: drop TabletMap::output_of's cut once names can hold '#', and have hajime surface an Input::set refusal instead of only logging it."""
+author = "Claude Opus 5.5 (1M context) (agent) <noreply@anthropic.com>"
+severity = 3
+state = "open"
+created_at = "2026-11-13T16:15:38.204520160Z"
+updated_at = "2026-11-13T16:15:38.204536351Z"
