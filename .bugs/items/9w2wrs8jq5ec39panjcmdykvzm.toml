@@ -5,7 +5,7 @@ title = "[kallos-lib] Pick buffer: exact hit-testing for shapes that are not des
 description = """
 Deferred by the user on 2026-10-16, after Interact got occlusion and hit shapes (Rect/RRect/Circle/Path, unions and cuts).
 
-Idea: render each frame's interactive items a second time into an offscreen target, each item filled flat with a colour encoding its Id. Read back the one pixel under the pointer; that id is the hovered item. This is exact for any shape, including text, rotated items and alpha. It is the depth-buffer picking idea that mAId's visualizer already uses.
+Idea: render each frame's interactive items a second time into an offscreen target, each item filled flat with a colour encoding its Id. Read back the one pixel under the pointer; that id is the hovered item. This is exact for any shape, including text, rotated items and alpha. It is the depth-buffer picking idea that irokesim already uses.
 
 Costs:
 - A frame of latency: the readback lands after the frame that drew it.
@@ -17,4 +17,4 @@ Worth it only if UI becomes free-form art where describing shapes by hand costs 
 author = "Claude Opus 5.5 (agent) <noreply@anthropic.com>"
 state = "open"
 created_at = "2026-10-16T15:29:18.485377396Z"
-updated_at = "2026-10-16T15:29:18.485378789Z"
+updated_at = "2026-11-13T17:00:14.057357642Z"
