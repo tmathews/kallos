@@ -41,3 +41,7 @@
 [submodule "sentinel"]
 	path = sentinel
 	url = git@github.com:tmathews/sentinel.git
+[submodule "techne"]
+	path = techne
+	url = git@github.com:tmathews/techne.git
+	branch = main

@@ -105,7 +105,8 @@ Flags
   --yes         answer yes to every offer. Includes the boot configuration,
                 which edits /etc and /boot and needs a reboot — say it on
                 purpose
-  --apps        also build/install yggdrasil, torrential, renzoku and library,
+  --apps        also build/install yggdrasil, torrential, renzoku, library and
+                techne,
                 and sentinel (the assistant)
   --debug       build the debug config (default: release)
   --release     build the release config
@@ -240,7 +241,7 @@ phase_binaries() {
 		hdr "binaries — $CFG -> $PREFIX"
 		local c built inst bins=(kosmos kallosd kallosctl hajime phylax)
 		[ -f "$root/kosmos/rust/kosmos-ng/Cargo.toml" ] && bins+=(kosmos-ng)
-		[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library)
+		[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library techne)
 		for c in "${bins[@]}"; do
 			# kosmos comes out of muon's build tree, kosmos-ng out of kosmos's
 			# cargo workspace, the Rust four out of their own crate target dirs
@@ -341,7 +342,7 @@ pending=""
 # testing the new code on it is a confusing way to find that out.
 stale_running() {
 	local c p bins=(kosmos kosmos-ng kallosd hajime phylax)
-	[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library)
+	[ "$APPS" = 1 ] && bins+=(yggdrasil torrential renzoku library techne)
 	for c in "${bins[@]}"; do
 		for p in $(pgrep -x -u "$(id -u)" "$c" || true); do
 			if [ "$(readlink "/proc/$p/exe" 2>/dev/null)" = "$PREFIX/bin/$c (deleted)" ]; then

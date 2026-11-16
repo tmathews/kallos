@@ -68,8 +68,9 @@ kosmos=(wayland wayland-protocols libxkbcommon pixman libdrm libinput seatd
 rust=(libpulse alsa-lib)
 
 # The opt-in apps. torrential's librqbit pulls native-tls -> openssl-sys, which
-# is NOT vendored. yggdrasil, renzoku and library need nothing beyond the
-# shared set (library is pure Rust; ffmpeg, below, is optional for it).
+# is NOT vendored. yggdrasil, renzoku, library and techne need nothing beyond the
+# shared set (library and techne are pure Rust; ffmpeg, below, is optional for
+# library).
 apps=(openssl)
 
 # Needed by a running session rather than by the build: the portal pair

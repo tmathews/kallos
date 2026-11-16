@@ -23,7 +23,7 @@
 # Usage: scripts/build.sh [debug|release]   (default: debug)
 #   KWM_SRC=<path>   where the compositor tree lives (default: ./kosmos)
 #   KWM=0            skip the compositor (Rust-only build)
-#   APPS=1           also build yggdrasil, torrential, renzoku and library, and
+#   APPS=1           also build yggdrasil, torrential, renzoku, library and techne, and
 #                    sentinel when its tree is here
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -44,8 +44,8 @@ crates=(kallosd kallosctl hajime phylax)
 # The apps are opt-in, so the session-suite iteration loop — which is what
 # test.sh and everyday work run — stays as short as it is. They are ordinary
 # cargo binaries with their assets baked in via include_bytes!, so appending
-# them here is all it takes; install.sh appends the same four.
-[ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku library) || true
+# them here is all it takes; install.sh appends the same five.
+[ "${APPS:-0}" = 1 ] && crates+=(yggdrasil torrential renzoku library techne) || true
 
 # sentinel, the assistant, is an app too. It became a submodule after the
 # others, so a checkout from before then may not have it: it is built when its
