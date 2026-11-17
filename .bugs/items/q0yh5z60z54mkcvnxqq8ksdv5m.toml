@@ -1,0 +1,19 @@
+id = "q0yh5z60z54mkcvnxqq8ksdv5m"
+kind = "todo"
+title = "Text fields: click to place the caret, drag to select, double/triple click in every app"
+description = """
+kallos-lib's TextField now takes the pointer (kallos-lib e53e505): click(index, count, extend) places the caret, a second and third press in quick succession take the word and the line, and shift extends the selection; drag_to(index) selects from the press. The app maps the pointer's x to a byte index with TextSystem::caret_index / caret_index_sized (the field's weight and size), adding TextField::scroll, and counts the presses itself. techne's layer-name field is the reference user (app.rs point_field, ui.rs field_index/scroll_field).
+
+Apps to move over:
+- library: search, tags (folders.rs), and the forms (form.rs); draw_field draws at a size and weight, so use caret_index_sized.
+- yggdrasil: the URL bar and the draft name set caret/anchor by hand on a press (main.rs ~809, ~832); use click, and add drag and multi-click.
+- hajime: launcher, overlay and settings fields.
+- torrential: its fields (main.rs, ui.rs).
+- phylax: the password field (secret.rs) is masked, so map x against the masked text, or leave it at caret-to-end.
+
+Also worth an I-beam cursor (text, xterm) over a field where the app sets cursors."""
+author = "Claude Opus 5.5 (agent) <noreply@anthropic.com>"
+severity = 4
+state = "open"
+created_at = "2026-11-17T15:16:35.537959393Z"
+updated_at = "2026-11-17T15:16:35.537983438Z"
